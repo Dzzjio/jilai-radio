@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { JsonLd, stationJsonLd } from "@/components/JsonLd";
 import { config } from "@/lib/config";
 import { site } from "@/lib/site";
+import { THEME_INIT_SCRIPT } from "@/lib/theme-script";
 import "./globals.css";
 
 const display = Michroma({ weight: "400", subsets: ["latin"], variable: "--font-display", display: "swap" });
@@ -40,13 +41,20 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#e6e8e5",
-  colorScheme: "light",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#e6e8e5" },
+    { media: "(prefers-color-scheme: dark)", color: "#14171a" },
+  ],
+  colorScheme: "light dark",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang={site.language} className={`${display.variable} ${mono.variable}`}>
+    // suppressHydrationWarning: the head script may set data-theme before React hydrates.
+    <html lang={site.language} className={`${display.variable} ${mono.variable}`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body>
         {/* The whole page is the console. Audio lives in module singletons (lib/radio-client),
             so it keeps playing across navigations even if a page doesn't render the player. */}

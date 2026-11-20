@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { PlayerPanel } from "@/components/PlayerPanel";
 import { RecentTracks } from "@/components/RecentTracks";
 import { ListenerCount, StationStatus } from "@/components/StationStatus";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { Visualizer } from "@/components/Visualizer";
 import s from "@/components/console.module.css";
 import { site } from "@/lib/site";
@@ -27,9 +28,12 @@ export default function HomePage() {
             <span className={s.eyebrow}>GENERAL ARRANGEMENT · LISTENING CONSOLE</span>
             <h1 className={s.h1}>RADIO JIL</h1>
           </div>
-          <p className={s.tagline}>
-            Free 24/7 online radio · {site.tagline}
-          </p>
+          <div className={s.titleRight}>
+            <p className={s.tagline}>
+              Free 24/7 online radio · {site.tagline}
+            </p>
+            <ThemeToggle />
+          </div>
         </header>
 
         <Suspense>

@@ -3,15 +3,48 @@
  * Single committed light look (paper + ink + one signal orange), so no dark theme.
  */
 :root {
+  /* light: grey drawing paper, black ink */
   --paper: #e6e8e5;
   --ink: #15181a;
   --ink-2: #4b5156;
   --dim: rgba(21, 24, 26, 0.28);
   --grid: rgba(21, 24, 26, 0.06);
   --grid-major: rgba(21, 24, 26, 0.11);
+  --hover: rgba(21, 24, 26, 0.08);
+  --press: #2a2f33;
   --hot: #f0561e; /* graphics and large marks only */
   --hot-text: #a8320d; /* orange that passes 4.5:1 for small text */
+  --on-hot: #15181a; /* text/icons drawn on an orange fill */
   color-scheme: light;
+}
+
+/* dark: the same drawing on a night-shift sheet. Shared by the system setting
+   (when the listener hasn't chosen) and the explicit toggle. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #14171a;
+    --ink: #e3e7e4;
+    --ink-2: #a3abb0;
+    --dim: rgba(227, 231, 228, 0.26);
+    --grid: rgba(227, 231, 228, 0.045);
+    --grid-major: rgba(227, 231, 228, 0.085);
+    --hover: rgba(227, 231, 228, 0.1);
+    --press: #c9cfcb;
+    --hot-text: #ff8a5c;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #14171a;
+  --ink: #e3e7e4;
+  --ink-2: #a3abb0;
+  --dim: rgba(227, 231, 228, 0.26);
+  --grid: rgba(227, 231, 228, 0.045);
+  --grid-major: rgba(227, 231, 228, 0.085);
+  --hover: rgba(227, 231, 228, 0.1);
+  --press: #c9cfcb;
+  --hot-text: #ff8a5c;
+  color-scheme: dark;
 }
 
 *,

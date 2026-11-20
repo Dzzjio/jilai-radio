@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { getAudioGraph, useAudio, useVizMode } from "@/lib/radio-client";
+import { useTheme } from "@/lib/theme";
 import { createSilentFrame } from "@/lib/viz/analysis";
 import { createVizMemory, draw, recordFrame, VIZ_MODES, type Palette, type VizMode } from "@/lib/viz/draw";
 import s from "./console.module.css";
@@ -32,6 +33,7 @@ function readPalette(el: HTMLElement): Palette {
 export function Visualizer() {
   const [mode, setMode] = useVizMode();
   const { status } = useAudio();
+  const theme = useTheme();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const memRef = useRef(createVizMemory());
   const live = status === "playing";
@@ -40,6 +42,7 @@ export function Visualizer() {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const silent = createSilentFrame();
+    memRef.current.hatch = null; // hatch tiles are drawn in the ink colour of the current theme
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     let pal = readPalette(canvas);
     let raf = 0;
@@ -90,7 +93,9 @@ export function Visualizer() {
       cancelAnimationFrame(raf);
       ro.disconnect();
     };
-  }, [live, mode]);
+    // `theme` is a real dependency: it changes the CSS variables readPalette() reads.
+    // eslint-disable-next-line react/exhaustive-effect-dependencies
+  }, [live, mode, theme]);
 
   return (
     <figure className={s.part} aria-labelledby="viz-caption">
