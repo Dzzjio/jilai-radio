@@ -1,9 +1,14 @@
 import type { Metadata, Viewport } from "next";
+import { JetBrains_Mono, Michroma } from "next/font/google";
 import type { ReactNode } from "react";
 import { JsonLd, stationJsonLd } from "@/components/JsonLd";
-import { Player } from "@/components/Player";
 import { config } from "@/lib/config";
 import { site } from "@/lib/site";
+import "./globals.css";
+
+const display = Michroma({ weight: "400", subsets: ["latin"], variable: "--font-display", display: "swap" });
+// Body text: "optional" avoids a late re-render (and a late LCP) on slow first visits.
+const mono = JetBrains_Mono({ weight: ["400", "500", "700"], subsets: ["latin"], variable: "--font-mono", display: "optional" });
 
 const title = `${site.name}: 24/7 Online Radio`;
 
@@ -34,15 +39,18 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#e6e8e5",
+  colorScheme: "light",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang={site.language}>
+    <html lang={site.language} className={`${display.variable} ${mono.variable}`}>
       <body>
+        {/* The whole page is the console. Audio lives in module singletons (lib/radio-client),
+            so it keeps playing across navigations even if a page doesn't render the player. */}
         {children}
-        {/* In the layout, so audio keeps playing across page navigations. */}
-        <Player />
         <JsonLd data={stationJsonLd()} />
       </body>
     </html>

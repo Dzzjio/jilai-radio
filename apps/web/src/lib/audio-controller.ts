@@ -10,10 +10,20 @@ export interface AudioState {
   volumeSupported: boolean;
 }
 
-type AudioLike = Pick<
+export type AudioLike = Pick<
   HTMLAudioElement,
-  "play" | "pause" | "load" | "removeAttribute" | "addEventListener" | "volume" | "muted" | "src" | "preload"
+  "play" | "pause" | "load" | "removeAttribute" | "addEventListener" | "volume" | "muted" | "src" | "preload" | "crossOrigin"
 >;
+
+/**
+ * Optional Web Audio routing (element → analyser → gain → speakers).
+ * When present, volume is applied by the gain node, so the analyser always sees
+ * the full-level signal and volume also works on iOS.
+ */
+export interface AudioGraph {
+  setGain(value: number): void;
+  resume(): Promise<void> | void;
+}
 
 type StorageLike = Pick<Storage, "getItem" | "setItem">;
 
@@ -24,6 +34,8 @@ export interface AudioControllerDeps {
   setTimer?: (fn: () => void, ms: number) => unknown;
   clearTimer?: (handle: unknown) => void;
   now?: () => number;
+  /** Called once, inside the first play() (a user gesture), to build the Web Audio graph. */
+  connectGraph?: (el: AudioLike) => AudioGraph;
 }
 
 const VOLUME_KEY = "radio-jil:volume";
@@ -62,6 +74,7 @@ export function createAudioController(deps: AudioControllerDeps) {
   let state: AudioState = { status: "stopped", volume: stored.volume, muted: stored.muted, volumeSupported: true };
   const subscribers = new Set<() => void>();
   let audio: AudioLike | null = null;
+  let graph: AudioGraph | null = null;
   let wantPlaying = false;
   let retries = 0;
   let retryTimer: unknown = null;
@@ -82,19 +95,43 @@ export function createAudioController(deps: AudioControllerDeps) {
     }
   };
 
+  /** Pushes the current volume/mute to whichever output is in use. */
+  function applyLevel() {
+    if (graph) graph.setGain(state.muted ? 0 : state.volume);
+    else if (audio) {
+      audio.volume = state.volume;
+      audio.muted = state.muted;
+    }
+  }
+
   function ensureAudio(): AudioLike {
     if (audio) return audio;
     const el = createAudio();
     el.preload = "none";
-    el.volume = state.volume;
-    el.muted = state.muted;
 
-    // Detect read-only volume (iOS): the assignment is silently ignored.
-    const probe = state.volume === 0.5 ? 0.25 : 0.5;
-    el.volume = probe;
-    const supported = Math.abs(el.volume - probe) < 0.01;
-    el.volume = state.volume;
-    set({ volumeSupported: supported });
+    if (deps.connectGraph) {
+      // Must be set before src: the stream needs CORS for the analyser to read it.
+      el.crossOrigin = "anonymous";
+      try {
+        graph = deps.connectGraph(el);
+      } catch {
+        graph = null;
+      }
+    }
+
+    if (graph) {
+      el.volume = 1;
+      el.muted = false;
+      set({ volumeSupported: true });
+    } else {
+      // Detect read-only volume (iOS): the assignment is silently ignored.
+      const probe = state.volume === 0.5 ? 0.25 : 0.5;
+      el.volume = probe;
+      const supported = Math.abs(el.volume - probe) < 0.01;
+      set({ volumeSupported: supported });
+    }
+    audio = el;
+    applyLevel();
 
     el.addEventListener("playing", () => {
       retries = 0;
@@ -105,8 +142,6 @@ export function createAudioController(deps: AudioControllerDeps) {
     });
     el.addEventListener("error", onFailure);
     el.addEventListener("ended", onFailure);
-
-    audio = el;
     return el;
   }
 
@@ -118,6 +153,7 @@ export function createAudioController(deps: AudioControllerDeps) {
     const el = ensureAudio();
     const sep = deps.streamUrl.includes("?") ? "&" : "?";
     el.src = `${deps.streamUrl}${sep}t=${now()}`;
+    void graph?.resume();
     el.play().catch((err: unknown) => {
       if (!wantPlaying) return;
       // Autoplay policy: the browser wants a user gesture. Not an error.
@@ -180,17 +216,13 @@ export function createAudioController(deps: AudioControllerDeps) {
     },
     setVolume(v: number) {
       const volume = clampVolume(v);
-      if (audio) {
-        audio.volume = volume;
-        if (volume > 0 && state.muted) audio.muted = false;
-      }
       set({ volume, muted: volume > 0 ? false : state.muted });
+      applyLevel();
       persist();
     },
     toggleMute() {
-      const muted = !state.muted;
-      if (audio) audio.muted = muted;
-      set({ muted });
+      set({ muted: !state.muted });
+      applyLevel();
       persist();
     },
   };

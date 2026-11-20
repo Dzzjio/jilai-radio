@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { clampVolume, createAudioController } from "./audio-controller";
 
 class FakeAudio {
+  crossOrigin: string | null = null;
   src = "";
   preload = "";
   muted = false;
@@ -27,7 +28,7 @@ function memoryStorage(init: Record<string, string> = {}) {
   return { data, getItem: (k: string) => data[k] ?? null, setItem: (k: string, v: string) => void (data[k] = v) };
 }
 
-function setup(opts: { readOnlyVolume?: boolean; storage?: ReturnType<typeof memoryStorage> } = {}) {
+function setup(opts: { readOnlyVolume?: boolean; storage?: ReturnType<typeof memoryStorage>; connectGraph?: (el: never) => { setGain(v: number): void; resume(): void } } = {}) {
   const el = new FakeAudio();
   el.readOnlyVolume = opts.readOnlyVolume ?? false;
   const timers: { fn: () => void; ms: number; cleared: boolean }[] = [];
@@ -40,9 +41,15 @@ function setup(opts: { readOnlyVolume?: boolean; storage?: ReturnType<typeof mem
     now: () => t++,
     setTimer: (fn, ms) => { const timer = { fn, ms, cleared: false }; timers.push(timer); return timer; },
     clearTimer: (h) => { (h as { cleared: boolean }).cleared = true; },
+    connectGraph: opts.connectGraph as never,
   });
   return { el, ctrl, timers, storage };
 }
+
+const fakeGraph = () => {
+  const g = { gains: [] as number[], resumes: 0, connectedTo: null as unknown, setGain(v: number) { g.gains.push(v); }, resume() { g.resumes++; } };
+  return g;
+};
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
@@ -151,5 +158,41 @@ describe("audio controller", () => {
     const { ctrl } = setup({ storage: broken as never });
     expect(ctrl.getState().volume).toBe(0.8);
     expect(() => ctrl.setVolume(0.5)).not.toThrow();
+  });
+
+  describe("with a Web Audio graph", () => {
+    it("connects on first play, sets CORS before src, and routes volume to the gain node", () => {
+      const g = fakeGraph();
+      let srcAtConnect: string | null = null;
+      const { el, ctrl } = setup({ connectGraph: ((audio: FakeAudio) => { g.connectedTo = audio; srcAtConnect = audio.src; return g; }) as never });
+      ctrl.setVolume(0.4);
+      expect(g.connectedTo).toBeNull(); // nothing built before a user gesture
+      ctrl.play();
+      expect(g.connectedTo).toBe(el);
+      expect(el.crossOrigin).toBe("anonymous");
+      expect(srcAtConnect).toBe("");
+      expect(g.resumes).toBe(1);
+      expect(el.volume).toBe(1); // element stays at full level, the gain does the work
+      expect(g.gains.at(-1)).toBeCloseTo(0.4);
+      ctrl.toggleMute();
+      expect(g.gains.at(-1)).toBe(0);
+      ctrl.setVolume(0.9);
+      expect(g.gains.at(-1)).toBeCloseTo(0.9);
+    });
+
+    it("offers volume even where element volume is read-only (iOS)", () => {
+      const { ctrl } = setup({ readOnlyVolume: true, connectGraph: (() => fakeGraph()) as never });
+      ctrl.play();
+      expect(ctrl.getState().volumeSupported).toBe(true);
+    });
+
+    it("falls back to element volume when the graph cannot be built", () => {
+      const { el, ctrl } = setup({ connectGraph: (() => { throw new Error("no web audio"); }) as never });
+      ctrl.setVolume(0.3);
+      ctrl.play();
+      expect(el.volume).toBeCloseTo(0.3);
+      ctrl.toggleMute();
+      expect(el.muted).toBe(true);
+    });
   });
 });

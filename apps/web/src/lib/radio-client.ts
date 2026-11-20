@@ -1,5 +1,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { createAudioController, type AudioController, type AudioState } from "./audio-controller";
+import { createWebAudioGraph, type WebAudioGraph } from "./audio-graph";
+import type { VizMode } from "./viz/draw";
 import { config } from "./config";
 import { createLiveStore, initialLiveState, type LiveState, type LiveStore } from "./live-store";
 
@@ -7,6 +9,7 @@ import { createLiveStore, initialLiveState, type LiveState, type LiveStore } fro
 // component. They live in the root layout, so they survive page navigations.
 let live: LiveStore | null = null;
 let audio: AudioController | null = null;
+let graph: WebAudioGraph | null = null;
 
 function getLive(): LiveStore {
   live ??= createLiveStore({ apiUrl: config.apiUrl, wsUrl: config.wsUrl });
@@ -21,8 +24,18 @@ function safeLocalStorage(): Storage | null {
   }
 }
 
+/** Analyser access for visualizers (null frames until the first play). */
+export function getAudioGraph(): WebAudioGraph {
+  graph ??= createWebAudioGraph();
+  return graph;
+}
+
 export function getAudio(): AudioController {
-  audio ??= createAudioController({ streamUrl: config.streamUrl, storage: safeLocalStorage() });
+  audio ??= createAudioController({
+    streamUrl: config.streamUrl,
+    storage: safeLocalStorage(),
+    connectGraph: (el) => getAudioGraph().connect(el),
+  });
   return audio;
 }
 
@@ -62,4 +75,41 @@ export function useAudio(): AudioState & { controller: AudioController | null } 
     () => serverAudioState,
   );
   return { ...state, controller };
+}
+
+const VIZ_KEY = "radio-jil:viz";
+const isVizMode = (v: unknown): v is VizMode => v === "polar" || v === "strip" || v === "spectrum";
+const vizListeners = new Set<() => void>();
+let vizMode: VizMode | null = null;
+
+function readVizMode(): VizMode {
+  if (vizMode) return vizMode;
+  try {
+    const saved = window.localStorage.getItem(VIZ_KEY);
+    vizMode = isVizMode(saved) ? saved : "polar";
+  } catch {
+    vizMode = "polar";
+  }
+  return vizMode;
+}
+
+function setVizMode(m: VizMode) {
+  vizMode = m;
+  try {
+    window.localStorage.setItem(VIZ_KEY, m);
+  } catch {
+    // storage blocked: the choice lasts for this visit only
+  }
+  for (const fn of vizListeners) fn();
+}
+
+function subscribeVizMode(fn: () => void) {
+  vizListeners.add(fn);
+  return () => vizListeners.delete(fn);
+}
+
+/** Which visualizer the listener picked; remembered in this browser only. */
+export function useVizMode(): [VizMode, (m: VizMode) => void] {
+  const mode = useSyncExternalStore(subscribeVizMode, readVizMode, () => "polar" as VizMode);
+  return [mode, setVizMode];
 }

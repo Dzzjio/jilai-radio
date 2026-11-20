@@ -1,0 +1,63 @@
+/*
+ * Radio Jil · C4 "Schematic": the site is one engineering drawing sheet.
+ * Single committed light look (paper + ink + one signal orange), so no dark theme.
+ */
+:root {
+  --paper: #e6e8e5;
+  --ink: #15181a;
+  --ink-2: #4b5156;
+  --dim: rgba(21, 24, 26, 0.28);
+  --grid: rgba(21, 24, 26, 0.06);
+  --grid-major: rgba(21, 24, 26, 0.11);
+  --hot: #f0561e; /* graphics and large marks only */
+  --hot-text: #a8320d; /* orange that passes 4.5:1 for small text */
+  color-scheme: light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+body {
+  font-family: var(--font-mono), ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+
+:focus-visible {
+  outline: 2px dashed var(--hot);
+  outline-offset: 5px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}

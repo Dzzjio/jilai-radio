@@ -15,7 +15,7 @@ Requirements: Docker, Node 22, pnpm, ffmpeg.
 ```bash
 pnpm install
 cp infra/.env.example infra/.env        # then change the passwords
-pnpm music:samples                      # optional: generate test-tone MP3s in infra/music
+pnpm music:samples                      # optional: generate test loops in infra/music
 pnpm infra:up                           # icecast + liquidsoap + postgres (localhost:5433)
 ```
 
@@ -54,5 +54,13 @@ pnpm --filter @radio-jil/web build      # every route must show as ○ (static)
 
 Or run API and web together with `pnpm dev`.
 
-Station name, tagline and About text live in `apps/web/src/lib/site.ts`. The player sits in the
-root layout (`apps/web/src/app/layout.tsx`), so audio keeps playing across page navigations.
+Station name, tagline and About text live in `apps/web/src/lib/site.ts`.
+
+The UI is "C4 · Schematic": the whole page is one engineering-drawing sheet. Its visualizer reads the
+live stream through Web Audio (`<audio>` → analyser → gain), with three views (Polar, Strip chart,
+Spectrum); the listener's choice is remembered in their browser. The analyser needs the stream to
+send CORS headers (Icecast does: `Access-Control-Allow-Origin: *`). Audio state lives in module
+singletons (`apps/web/src/lib/radio-client.ts`), so it keeps playing across page navigations.
+
+`pnpm music:samples` generates four short beat loops (kick, bass, pad, hats) so the visualizer has
+something real to show in local dev.
