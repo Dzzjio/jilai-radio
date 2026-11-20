@@ -42,3 +42,17 @@ pnpm --filter @radio-jil/api test       # needs Postgres up; uses a separate rad
 | `POST /internal/track-changed` | Called by Liquidsoap; requires `X-Internal-Secret` |
 
 Schema changes: edit `apps/api/src/db/schema.ts`, then `pnpm --filter @radio-jil/api db:generate`.
+
+## Web (local)
+
+```bash
+cp apps/web/.env.example apps/web/.env.local
+pnpm --filter @radio-jil/web dev        # http://localhost:3000 (needs the API and stream running)
+pnpm --filter @radio-jil/web test
+pnpm --filter @radio-jil/web build      # every route must show as ○ (static)
+```
+
+Or run API and web together with `pnpm dev`.
+
+Station name, tagline and About text live in `apps/web/src/lib/site.ts`. The player sits in the
+root layout (`apps/web/src/app/layout.tsx`), so audio keeps playing across page navigations.

@@ -1,9 +1,25 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["typescript", "unicorn", "oxc", "import", "react", "nextjs"],
+  "plugins": [
+    "typescript",
+    "unicorn",
+    "oxc",
+    "import",
+    "react",
+    "nextjs"
+  ],
   "categories": {
     "correctness": "error",
     "suspicious": "warn"
   },
-  "ignorePatterns": ["**/.next/**", "**/dist/**", "**/node_modules/**", "**/drizzle/**"]
+  "ignorePatterns": [
+    "**/.next/**",
+    "**/dist/**",
+    "**/node_modules/**",
+    "**/drizzle/**",
+    "**/next-env.d.ts"
+  ],
+  "rules": {
+    "react/react-in-jsx-scope": "off"
+  }
 }

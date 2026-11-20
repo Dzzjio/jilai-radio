@@ -12,3 +12,4 @@ infra/music/*
 !infra/music/.gitkeep
 infra/data/
 .DS_Store
+next-env.d.ts
