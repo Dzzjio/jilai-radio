@@ -3,6 +3,7 @@ import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import type { Db } from "./db/client.js";
 import type { Env } from "./env.js";
+import { adminRoutes } from "./routes/admin.js";
 import { internalRoutes } from "./routes/internal.js";
 import { publicRoutes } from "./routes/public.js";
 import { RadioState } from "./state.js";
@@ -42,6 +43,14 @@ export async function buildApp({ env, db, radio = new RadioState(), logger }: Ap
     prefix: "/internal",
     secret: env.INTERNAL_SECRET,
     musicDir: env.LIQUIDSOAP_MUSIC_DIR,
+  });
+  await app.register(adminRoutes, {
+    prefix: "/admin",
+    password: env.ADMIN_PASSWORD,
+    sessionSecret: env.ADMIN_SESSION_SECRET,
+    musicDir: env.MUSIC_DIR,
+    maxUploadBytes: env.MAX_UPLOAD_MB * 1024 * 1024,
+    ffprobePath: env.FFPROBE_PATH,
   });
 
   return app;

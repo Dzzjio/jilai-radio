@@ -1,0 +1,14 @@
+# Keep the build context small and never bake secrets or media into images.
+**/node_modules
+**/.next
+**/dist
+**/coverage
+**/*.tsbuildinfo
+**/.env
+**/.env.*
+!**/.env.example
+.git
+infra/music
+infra/data
+moodboard
+apps/web

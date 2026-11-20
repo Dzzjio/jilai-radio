@@ -8,19 +8,23 @@ import { RadioState } from "../src/state.js";
 import { testDatabaseUrl } from "./db-url.js";
 
 export const SECRET = "test-internal-secret";
+export const ADMIN_PASSWORD = "test-admin-password-123";
 
-export function testEnv() {
+export function testEnv(overrides: { MUSIC_DIR?: string } = {}) {
   return loadEnv({
     DATABASE_URL: testDatabaseUrl(),
     INTERNAL_SECRET: SECRET,
     LOG_LEVEL: "silent",
     CORS_ORIGIN: "http://localhost:3000,https://radio.example.com",
+    ADMIN_PASSWORD: ADMIN_PASSWORD,
+    ADMIN_SESSION_SECRET: "test-session-secret-0123456789abcdef0123456789",
+    MUSIC_DIR: overrides.MUSIC_DIR ?? "/nonexistent-music-dir",
   });
 }
 
 /** Truncates every table, then builds a fresh app (fresh in-memory state). */
-export async function setupTestApp() {
-  const env = testEnv();
+export async function setupTestApp(overrides: { MUSIC_DIR?: string } = {}) {
+  const env = testEnv(overrides);
   const { db, sql } = createDb(env.DATABASE_URL);
   await db.execute(dsql`truncate play_history, playlist_tracks, schedule, playlists, tracks restart identity cascade`);
   const radio = new RadioState();

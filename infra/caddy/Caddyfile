@@ -1,0 +1,33 @@
+# One HTTPS host for everything the website talks to:
+#   https://{$PUBLIC_HOST}/stream  → Icecast /live (the audio)
+#   https://{$PUBLIC_HOST}/…       → API (REST, WebSocket /ws, /admin)
+# Caddy gets and renews the Let's Encrypt certificate by itself (ports 80 and 443 must be open).
+# Icecast's own pages (/stats.xsl, /admin) are not exposed.
+
+{$PUBLIC_HOST} {
+	@stream path /stream
+	handle @stream {
+		rewrite * /live
+		reverse_proxy icecast:8000 {
+			# never buffer a live stream
+			flush_interval -1
+		}
+	}
+
+	handle {
+		encode zstd gzip
+		reverse_proxy api:4000
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

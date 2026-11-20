@@ -1,0 +1,344 @@
+/* Admin sheet: same drawing vocabulary as the console (ink on paper, 1.5px rules, one orange). */
+
+.root {
+  min-height: 100dvh;
+  padding: 14px max(14px, env(safe-area-inset-right, 0px)) 14px max(14px, env(safe-area-inset-left, 0px));
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(var(--grid-major) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-major) 1px, transparent 1px),
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 120px 120px, 120px 120px, 24px 24px, 24px 24px;
+}
+.sheet {
+  min-height: calc(100dvh - 28px);
+  border: 2px solid var(--ink);
+  outline: 1px solid var(--ink);
+  outline-offset: -12px;
+  padding: 30px 34px 34px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+@media (max-width: 700px) {
+  .sheet {
+    padding: 26px 18px 26px;
+  }
+}
+
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 24px;
+  border-bottom: 1.5px solid var(--ink);
+  padding-bottom: 12px;
+}
+.eyebrow {
+  display: block;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  color: var(--ink-2);
+  margin-bottom: 6px;
+}
+.h1 {
+  margin: 0;
+  font-family: var(--font-display), "Arial Black", sans-serif;
+  font-weight: 400;
+  font-size: clamp(24px, 3.4vw, 34px);
+  letter-spacing: 0.04em;
+}
+.headActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.h2 {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+.balloon {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1.5px solid var(--ink);
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+.note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink-2);
+  max-width: 80ch;
+}
+
+.btn,
+.btnSolid,
+.btnDanger {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1.5px solid var(--ink);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.btn:hover,
+.btnSolid {
+  background: var(--ink);
+  color: var(--paper);
+}
+.btnSolid:hover {
+  background: var(--press);
+  border-color: var(--press);
+}
+.btnDanger {
+  background: var(--hot);
+  border-color: var(--hot);
+  color: var(--on-hot);
+}
+.btn:disabled,
+.btnSolid:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.small {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 11px;
+}
+
+.input {
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1.5px solid var(--ink);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 14px;
+  min-width: 0;
+}
+.label {
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  color: var(--ink-2);
+}
+
+/* login */
+.login {
+  margin: auto;
+  width: min(420px, 100%);
+  border: 1.5px solid var(--ink);
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.grow {
+  flex: 1 1 200px;
+}
+
+/* upload */
+.drop {
+  border: 1.5px dashed var(--ink);
+  padding: 22px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  justify-content: space-between;
+  transition: background 0.15s;
+}
+.dropActive {
+  background: var(--hover);
+}
+.fileLabel {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+}
+.fileLabel input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.fileLabel:focus-within {
+  outline: 2px dashed var(--hot);
+  outline-offset: 4px;
+}
+.queue {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+.queueItem {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 160px auto;
+  gap: 12px;
+  align-items: center;
+}
+.bar {
+  height: 10px;
+  border: 1.5px solid var(--ink);
+  position: relative;
+}
+.barFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: repeating-linear-gradient(45deg, var(--ink) 0 1px, transparent 1px 5px);
+}
+.ok {
+  color: var(--ink-2);
+}
+.err {
+  color: var(--hot-text);
+}
+
+/* tables */
+.tableWrap {
+  overflow-x: auto;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 760px;
+}
+.table th {
+  border: 1.5px solid var(--ink);
+  padding: 6px 8px;
+  text-align: left;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.table td {
+  border: 1px solid var(--ink-2);
+  padding: 5px 8px;
+  vertical-align: middle;
+}
+.num {
+  text-align: right;
+  white-space: nowrap;
+}
+.actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.missing {
+  color: var(--hot-text);
+  font-weight: 700;
+}
+.empty {
+  color: var(--ink-2);
+  padding: 14px 8px !important;
+}
+
+/* playlists */
+.plGrid {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+  gap: 20px;
+}
+@media (max-width: 800px) {
+  .plGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.plList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1.5px solid var(--ink);
+}
+.plItem {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-bottom: 1px solid var(--ink-2);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.plItem[aria-current="true"] {
+  background: var(--ink);
+  color: var(--paper);
+}
+.plEditor {
+  border: 1.5px solid var(--ink);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.plTracks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.plTrack {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--dim);
+  font-size: 13px;
+}
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.status {
+  min-height: 1.4em;
+  margin: 0;
+  font-size: 13px;
+}
