@@ -12,8 +12,8 @@ type WebkitWindow = Window & { webkitAudioContext?: typeof AudioContext };
 export function createWebAudioGraph() {
   let ctx: AudioContext | null = null;
   let analyser: AnalyserNode | null = null;
-  let td: Uint8Array<ArrayBuffer> | null = null;
-  let fd: Uint8Array<ArrayBuffer> | null = null;
+  let td: Float32Array<ArrayBuffer> | null = null;
+  let fd: Float32Array<ArrayBuffer> | null = null;
 
   return {
     connect(el: AudioLike): AudioGraph {
@@ -30,8 +30,9 @@ export function createWebAudioGraph() {
       gain.connect(c.destination);
       ctx = c;
       analyser = an;
-      td = new Uint8Array(an.fftSize);
-      fd = new Uint8Array(an.frequencyBinCount);
+      // Float data: full resolution (the byte API bottoms out around −42 dBFS).
+      td = new Float32Array(an.fftSize);
+      fd = new Float32Array(an.frequencyBinCount);
       return {
         setGain(value) {
           gain.gain.setTargetAtTime(value, c.currentTime, 0.015);
@@ -45,9 +46,9 @@ export function createWebAudioGraph() {
     /** Fills and returns the latest analysis frame, or null before the first play. */
     read(): AudioFrame | null {
       if (!ctx || !analyser || !td || !fd) return null;
-      analyser.getByteTimeDomainData(td);
-      analyser.getByteFrequencyData(fd);
-      return { td, fd, sampleRate: ctx.sampleRate, minDb: analyser.minDecibels, maxDb: analyser.maxDecibels };
+      analyser.getFloatTimeDomainData(td);
+      analyser.getFloatFrequencyData(fd);
+      return { td, fd, sampleRate: ctx.sampleRate };
     },
   };
 }

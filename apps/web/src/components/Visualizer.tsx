@@ -7,9 +7,12 @@ import { createVizMemory, draw, recordFrame, VIZ_MODES, type Palette, type VizMo
 import s from "./console.module.css";
 
 const CAPTIONS: Record<VizMode, string> = {
-  polar: "Detail A · Ring: the music in 48 frequency bands, 40 Hz at the top to 16 kHz at the bottom, mirrored. Orange line: the live waveform. Centre: loudness in dBFS.",
-  strip: "Detail B · Loudness of the last 10 seconds in dBFS. Hatched: average (RMS). Orange pen: peaks.",
-  spectrum: "Detail C · The music in 32 frequency bands, 31 Hz to 16 kHz. Orange caps hold recent peaks; the dimension line marks the loudest band.",
+  polar:
+    "Detail A · Ring: 48 log bands, 40 Hz (top) to 16 kHz (bottom), mirrored; 0 to −90 dBFS, orange above −12. Orange line: the waveform. Centre: RMS level, 93 ms window.",
+  strip:
+    "Detail B · Level over the last 10 s, 0 to −60 dBFS. Hatched: RMS (93 ms window). Orange pen: sample peak (not true peak).",
+  spectrum:
+    "Detail C · 32 log bands, 31 Hz to 16 kHz, 0 to −90 dBFS (sine-calibrated). FFT 4096, Blackman window. Orange caps: peak hold, falling 20 dB/s.",
 };
 
 function readPalette(el: HTMLElement): Palette {
@@ -55,9 +58,10 @@ export function Visualizer() {
       if (!x) return;
       x.setTransform(dpr, 0, 0, dpr, 0, 0);
       x.clearRect(0, 0, w, h);
+      const now = performance.now();
       const frame = (isLive && getAudioGraph().read()) || silent;
-      if (isLive) recordFrame(memRef.current, frame);
-      draw(mode, { x, w, h, live: isLive, frame, mem: memRef.current, pal });
+      if (isLive) recordFrame(memRef.current, frame, now);
+      draw(mode, { x, w, h, live: isLive, frame, mem: memRef.current, pal, now });
     };
 
     const loop = (t: number) => {
