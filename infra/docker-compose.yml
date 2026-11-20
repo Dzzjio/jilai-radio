@@ -1,0 +1,52 @@
+# Radio Jil infrastructure. Every image here is available for linux/arm64.
+#   Local dev:  docker compose up -d icecast liquidsoap postgres   (api + web run via `pnpm dev`)
+#   Production: docker compose up -d                                (see README)
+
+name: radio-jil
+
+services:
+  icecast:
+    build: ./icecast
+    image: radio-jil-icecast
+    restart: unless-stopped
+    environment:
+      ICECAST_SOURCE_PASSWORD: ${ICECAST_SOURCE_PASSWORD:?set ICECAST_SOURCE_PASSWORD in infra/.env}
+      ICECAST_ADMIN_PASSWORD: ${ICECAST_ADMIN_PASSWORD:?set ICECAST_ADMIN_PASSWORD in infra/.env}
+      ICECAST_HOSTNAME: ${PUBLIC_HOST:-localhost}
+      ICECAST_MAX_LISTENERS: ${ICECAST_MAX_LISTENERS:-500}
+    ports:
+      # Bound to localhost only; in production the public reaches it through Caddy.
+      - "127.0.0.1:${ICECAST_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8000/stats.xsl"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  liquidsoap:
+    image: savonet/liquidsoap:v2.4.6
+    restart: unless-stopped
+    command: ["/radio/radio.liq"]
+    depends_on:
+      icecast:
+        condition: service_healthy
+    environment:
+      API_URL: ${LIQUIDSOAP_API_URL:-http://api:4000}
+      INTERNAL_SECRET: ${INTERNAL_SECRET:?set INTERNAL_SECRET in infra/.env}
+      ICECAST_HOST: icecast
+      ICECAST_PORT: "8000"
+      ICECAST_SOURCE_PASSWORD: ${ICECAST_SOURCE_PASSWORD}
+      ICECAST_MOUNT: live
+      STATION_NAME: ${STATION_NAME:-Radio Jil}
+      STATION_DESCRIPTION: ${STATION_DESCRIPTION:-24/7 online radio}
+      STATION_GENRE: ${STATION_GENRE:-Various}
+      STATION_URL: ${STATION_URL:-http://localhost:3000}
+      STREAM_BITRATE: ${STREAM_BITRATE:-128}
+      CROSSFADE_SECONDS: ${CROSSFADE_SECONDS:-5.}
+    volumes:
+      - ./liquidsoap:/radio:ro
+      - ./fallback:/fallback:ro
+      - ${MUSIC_HOST_DIR:-./music}:/music:ro
+    extra_hosts:
+      # Lets Liquidsoap reach an API running on the host during local dev.
+      - "host.docker.internal:host-gateway"

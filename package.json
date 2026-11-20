@@ -1,0 +1,23 @@
+{
+  "name": "radio-jil",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.9.1",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter \"./apps/*\" dev",
+    "build": "pnpm --filter \"./apps/*\" build",
+    "test": "pnpm --filter \"./apps/*\" test",
+    "typecheck": "pnpm --filter \"./apps/*\" typecheck",
+    "lint": "oxlint",
+    "infra:up": "docker compose -f infra/docker-compose.yml up -d icecast liquidsoap",
+    "infra:down": "docker compose -f infra/docker-compose.yml down",
+    "music:samples": "bash infra/scripts/make-samples.sh"
+  },
+  "devDependencies": {
+    "oxlint": "^1.94.0",
+    "typescript": "^7.0.2"
+  }
+}

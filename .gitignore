@@ -1,0 +1,14 @@
+node_modules/
+.next/
+dist/
+out/
+coverage/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.vercel/
+infra/music/*
+!infra/music/.gitkeep
+infra/data/
+.DS_Store
