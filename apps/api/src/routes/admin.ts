@@ -1,5 +1,5 @@
 import { createWriteStream } from "node:fs";
-import { chmod, copyFile, mkdtemp, readdir, rename, rm, stat, unlink } from "node:fs/promises";
+import { mkdtemp, readdir, rm, stat, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
@@ -9,7 +9,7 @@ import type { FastifyPluginAsync, FastifyReply } from "fastify";
 import { z } from "zod";
 import { issueToken, LoginLimiter, safeEqual, verifyToken } from "../auth.js";
 import { playlists, playlistTracks, tracks } from "../db/schema.js";
-import { isMp3, probe, safeJoin, slugFilename, titleFromFilename, uniqueFilename } from "../media.js";
+import { isMp3, placeInMusicDir, probe, safeJoin, slugFilename, titleFromFilename, uniqueFilename } from "../media.js";
 
 export interface AdminOptions {
   password: string;
@@ -37,21 +37,6 @@ const blank = (v: string | null | undefined) => (v && v.trim() ? v.trim() : null
 
 function badRequest(reply: FastifyReply, issues: z.ZodError) {
   return reply.code(400).send({ error: "invalid request", issues: issues.issues.map((i) => `${i.path.join(".")}: ${i.message}`) });
-}
-
-/** Moves a file into the music folder without Liquidsoap ever seeing a half-written MP3. */
-async function placeInMusicDir(tmpFile: string, musicDir: string, filename: string) {
-  const dest = safeJoin(musicDir, filename);
-  const partial = safeJoin(musicDir, `.${filename}.part`);
-  try {
-    await rename(tmpFile, partial);
-  } catch {
-    await copyFile(tmpFile, partial); // tmp and music folder on different filesystems (Docker volumes)
-    await unlink(tmpFile).catch(() => {});
-  }
-  await chmod(partial, 0o644); // Liquidsoap runs as a different user and only needs to read
-  await rename(partial, dest);
-  return dest;
 }
 
 export const adminRoutes: FastifyPluginAsync<AdminOptions> = async (app, opts) => {
@@ -166,6 +151,15 @@ export const adminRoutes: FastifyPluginAsync<AdminOptions> = async (app, opts) =
     return reply.code(204).send();
   });
 
+  /** Puts one track on repeat, or stops the repeat ({ trackId: null }). */
+  app.put("/repeat", async (req, reply) => {
+    const body = z.object({ trackId: z.number().int().positive().nullable() }).strict().safeParse(req.body ?? {});
+    if (!body.success) return badRequest(reply, body.error);
+    const row = await app.live.setRepeat(body.data.trackId);
+    if (body.data.trackId !== null && !row) return reply.code(404).send({ error: "Track not found." });
+    return { onRepeat: row };
+  });
+
   /**
    * Registers MP3s that were copied into the folder by hand, and fills in length/size
    * for tracks the station registered on first play (those have no ffprobe data yet).
@@ -204,6 +198,7 @@ export const adminRoutes: FastifyPluginAsync<AdminOptions> = async (app, opts) =
             album: info.tags.album ?? null,
             durationSec: info.durationSec,
             sizeBytes: (await stat(full)).size,
+            source: "folder",
           })
           .onConflictDoNothing({ target: tracks.filename });
         added++;

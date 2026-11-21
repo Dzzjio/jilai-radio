@@ -3,11 +3,12 @@
 A 24/7 online radio station: every listener hears the same live stream, like a real radio.
 
 ```
- MP3s ─► Liquidsoap ─► Icecast ─► Caddy (HTTPS) ─► listeners' browsers
- (shuffle, crossfade,   (stream)    /stream             ▲
-  fallback)   │                     /api, /ws, /admin   │ website (Vercel)
-              └── track changed ─► API ─► Postgres      │
-                                    └── WebSocket ──────┘
+ DJ (BUTT) ─:8005─┐
+ MP3s ────────────┴─► Liquidsoap ─► Icecast ─► Caddy (HTTPS) ─► listeners' browsers
+ (live > repeat > shuffle      (stream)    /stream             ▲
+  > fallback; records live)   │            /api, /ws, /admin   │ website (Vercel)
+              └── track changed, recordings ─► API ─► Postgres │
+                                                └── WebSocket ─┘
 ```
 
 | Part | What | Runs on |
@@ -50,6 +51,13 @@ pnpm dev                                    # API :4000 + website :3000
 - **Admin** (`/admin`, one password from `ADMIN_PASSWORD`): upload MP3s (duration and tags via ffprobe),
   edit and delete tracks, scan the folder for files copied in by hand, manage playlists. Playlists are stored
   for scheduling later; the station currently plays the whole library.
+- **Live show → repeat:** a DJ connects with BUTT (or Mixxx/OBS) to port 8005 and the station switches to him
+  (the site shows LIVE). Liquidsoap records the show (320 kbps); when he stops, the recording is saved to the
+  library and **plays on repeat** until the next show. Recordings under 30 s (accidental connects) are discarded.
+  Admin shows the recording as `LIVE REC · ON REPEAT`; **Stop repeat** returns the station to the library.
+  Priority: live → repeat → library shuffle → silence (the stream never drops).
+- Test a live show locally without BUTT:
+  `ffmpeg -re -i show.mp3 -c:a libmp3lame -b:a 320k -content_type audio/mpeg -f mp3 icecast://source:$LIVE_PASSWORD@127.0.0.1:8005/live-in`
 
 ### API
 
@@ -57,7 +65,7 @@ pnpm dev                                    # API :4000 + website :3000
 | --- | --- |
 | `GET /health` · `GET /now-playing` · `GET /history?limit=10` | public |
 | `GET /ws` (WebSocket) | `snapshot`, then `now-playing` and `listeners` pushes |
-| `POST /internal/track-changed` | Liquidsoap only (`X-Internal-Secret`) |
+| `POST /internal/track-changed` · `/internal/live` · `/internal/live-recording` · `GET /internal/repeat` | Liquidsoap only (`X-Internal-Secret`); blocked at Caddy |
 | `POST /admin/login` → bearer token (12 h) | 5 attempts / minute / IP |
 | `/admin/tracks` (GET, POST upload, PATCH, DELETE, `POST /scan`) · `/admin/playlists…` | bearer token |
 
@@ -88,6 +96,7 @@ Oracle blocks traffic twice: in the cloud network **and** in the VM's own firewa
 | `0.0.0.0/0` | TCP | `80` |
 | `0.0.0.0/0` | TCP | `443` |
 | `0.0.0.0/0` | UDP | `443` (optional, HTTP/3) |
+| `0.0.0.0/0` | TCP | `8005` (live input for the DJ; only needed around the show) |
 
 **b) iptables (inside the VM):** Oracle's Ubuntu image rejects everything except SSH. SSH in
 (`ssh ubuntu@<public-ip>`) and run:
@@ -96,6 +105,7 @@ Oracle blocks traffic twice: in the cloud network **and** in the VM's own firewa
 sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT
 sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT
 sudo iptables -I INPUT 6 -m state --state NEW -p udp --dport 443 -j ACCEPT
+sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 8005 -j ACCEPT   # live input
 sudo netfilter-persistent save        # keep the rules after a reboot
 ```
 
@@ -119,7 +129,7 @@ cp .env.example .env
 Generate secrets (hex only, so nothing needs quoting), then edit `.env`:
 
 ```bash
-for v in ICECAST_SOURCE_PASSWORD ICECAST_ADMIN_PASSWORD INTERNAL_SECRET POSTGRES_PASSWORD; do echo "$v=$(openssl rand -hex 24)"; done
+for v in ICECAST_SOURCE_PASSWORD ICECAST_ADMIN_PASSWORD INTERNAL_SECRET POSTGRES_PASSWORD LIVE_PASSWORD; do echo "$v=$(openssl rand -hex 24)"; done
 echo "ADMIN_SESSION_SECRET=$(openssl rand -hex 32)"
 nano .env
 ```
@@ -135,12 +145,15 @@ STATION_URL=https://example.com
 ICECAST_SOURCE_PASSWORD=…  ICECAST_ADMIN_PASSWORD=…  INTERNAL_SECRET=…  POSTGRES_PASSWORD=…   # from above
 ADMIN_PASSWORD=<a long password you will type on /admin>
 ADMIN_SESSION_SECRET=…                        # from above
+LIVE_PASSWORD=…                               # from above; give it only to the DJ
+LIVE_BIND=0.0.0.0                             # lets the DJ reach port 8005 from the internet
 ```
 
-The API container writes uploads as user `1000`, so give it the music folder, then start everything:
+The API and Liquidsoap containers run as user `1000`, so give them the music and recordings folders, then
+start everything:
 
 ```bash
-mkdir -p music && sudo chown -R 1000:1000 music
+mkdir -p music recordings && sudo chown -R 1000:1000 music recordings
 docker compose up -d --build                  # first build takes a few minutes on ARM
 docker compose ps                             # all services "running", api "healthy"
 curl https://api.example.com/health           # {"ok":true}
@@ -181,6 +194,29 @@ Listen to the raw stream at `https://api.example.com/stream`.
 - **Logs:** `docker compose logs -f api` (or `liquidsoap`, `caddy`, `icecast`).
 - **Backup:** `docker compose exec postgres pg_dump -U radio radio > radio-$(date +%F).sql`, plus a copy of `infra/music/`.
 
+### Going live (for the DJ)
+
+In **BUTT** → Settings → Main → Server → **Add**:
+
+| Field | Value |
+| --- | --- |
+| Type | Icecast |
+| Address | `api.example.com` |
+| Port | `8005` |
+| Password | `LIVE_PASSWORD` from the server's `infra/.env` |
+| Icecast mountpoint | `live-in` |
+| Icecast user | `source` |
+
+Audio: MP3, 320 kbps, 44.1 kHz, stereo. Under **Stream → Song name**, type the show title and enable updating it,
+so the site shows it (the recording is named after the first title he sends). Press ▶ to go live, ■ to end.
+
+- The connection is **not encrypted** (Icecast source clients can't stream through an HTTPS proxy; tested), so
+  the password is sent in plain text: keep it long and random, and after the show change `LIVE_PASSWORD` and run
+  `docker compose up -d liquidsoap`, or close port 8005 again.
+- If his connection drops, the station falls back without silence and saves what was recorded; reconnecting goes
+  live again and the newest part ends up on repeat (both parts stay in admin).
+- Admin → **Going live** shows these settings; the tracks list shows `ON REPEAT` and has **Stop repeat**.
+
 ### Troubleshooting
 
 | Symptom | Check |
@@ -191,3 +227,5 @@ Listen to the raw stream at `https://api.example.com/stream`.
 | Now playing never changes | `LIQUIDSOAP_API_URL=http://api:4000` and the same `INTERNAL_SECRET` for both containers. |
 | Upload fails with a permission error | `sudo chown -R 1000:1000 infra/music` on the server. |
 | API exits at start | `docker compose logs api` names the missing/short variable (e.g. `ADMIN_PASSWORD` needs 12+ characters). |
+| DJ can't connect | Port 8005 open in the security list **and** iptables; `LIVE_BIND=0.0.0.0`; mount `live-in`, user `source`. `docker compose logs liquidsoap` shows `DJ connected`. |
+| Show ended but no recording on repeat | `docker compose logs api` (look for "live recording"); the recordings folder must be owned by uid 1000. |

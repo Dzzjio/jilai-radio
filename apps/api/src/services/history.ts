@@ -41,6 +41,7 @@ export async function recordTrackChange(db: Db, change: TrackChange, musicDir: s
       album: null,
       startedAt: now.toISOString(),
       isFallback: true,
+      isLive: false,
     };
   }
 
@@ -52,7 +53,7 @@ export async function recordTrackChange(db: Db, change: TrackChange, musicDir: s
   return db.transaction(async (tx) => {
     // Tracks uploaded via admin already exist (and their metadata wins).
     // Files dropped straight into the folder get registered on first play.
-    await tx.insert(tracks).values({ filename, title, artist, album }).onConflictDoNothing({ target: tracks.filename });
+    await tx.insert(tracks).values({ filename, title, artist, album, source: "folder" }).onConflictDoNothing({ target: tracks.filename });
     const [track] = await tx.select().from(tracks).where(eq(tracks.filename, filename));
     if (!track) throw new Error(`track ${filename} vanished during insert`);
 
@@ -69,8 +70,16 @@ export async function recordTrackChange(db: Db, change: TrackChange, musicDir: s
       album: row.album,
       startedAt: row.playedAt.toISOString(),
       isFallback: false,
+      isLive: false,
     };
   });
+}
+
+/** Logs a line of a live show (title/artist sent from the DJ's app) to history. */
+export async function recordLiveMetadata(db: Db, title: string, artist: string | null): Promise<NowPlaying> {
+  const [row] = await db.insert(playHistory).values({ trackId: null, title, artist, album: null }).returning();
+  if (!row) throw new Error("failed to insert play_history row");
+  return { trackId: null, title, artist, album: null, startedAt: row.playedAt.toISOString(), isFallback: false, isLive: true };
 }
 
 export async function getRecentHistory(db: Db, limit = 10): Promise<HistoryItem[]> {
@@ -96,5 +105,6 @@ export async function getLatestNowPlaying(db: Db): Promise<NowPlaying | null> {
     album: last.album,
     startedAt: last.playedAt,
     isFallback: false,
+    isLive: false,
   };
 }

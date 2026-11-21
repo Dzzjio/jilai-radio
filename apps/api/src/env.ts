@@ -12,6 +12,9 @@ const schema = z.object({
   LIQUIDSOAP_MUSIC_DIR: z.string().default("/music"),
   /** Where the API stores uploaded MP3s: the same folder Liquidsoap plays (it may be mounted at a different path). */
   MUSIC_DIR: z.string().default("/music"),
+  /** Where Liquidsoap writes live recordings, as seen by the API / by Liquidsoap. */
+  RECORDINGS_DIR: z.string().default("/recordings"),
+  LIQUIDSOAP_RECORDINGS_DIR: z.string().default("/recordings"),
   MAX_UPLOAD_MB: z.coerce.number().int().min(1).max(2000).default(300),
   FFPROBE_PATH: z.string().default("ffprobe"),
   ADMIN_PASSWORD: z.string().min(12, "ADMIN_PASSWORD must be at least 12 characters"),

@@ -77,15 +77,18 @@ export function PlayerPanel() {
           <div className={s.npText}>
             <div className={s.npHead}>
               <h2 id="np-label" className={s.label}>NOW PLAYING</h2>
-              <span className={`${s.chip} ${status === "playing" ? s.chipLive : ""}`}>
-                {status === "playing" ? "LISTENING" : status === "loading" ? "TUNING" : "PAUSED"}
+              <span className={s.chips}>
+                {np?.isLive ? <span className={`${s.chip} ${s.chipLive} ${s.chipPulse}`}>● LIVE</span> : null}
+                <span className={`${s.chip} ${status === "playing" ? s.chipLive : ""}`}>
+                  {status === "playing" ? "LISTENING" : status === "loading" ? "TUNING" : "PAUSED"}
+                </span>
               </span>
             </div>
             <p className={s.npTitle}>{title}</p>
             {/* always rendered so the box keeps its height when data arrives */}
             <p className={s.npArtist}>{np?.artist ?? "\u00a0"}</p>
             <p className={s.npMeta}>
-              <span>{np?.isFallback ? "Station break" : since ? `On air since ${since}` : "\u00a0"}</span>
+              <span>{np?.isLive ? "Live now" : np?.isFallback ? "Station break" : since ? `On air since ${since}` : "\u00a0"}</span>
               <span>
                 {site.stream.format} {site.stream.bitrateKbps} kbps · {site.stream.sampleRateKhz} kHz
               </span>

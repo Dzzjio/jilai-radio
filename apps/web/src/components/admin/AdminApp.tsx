@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { type DragEvent, type FormEvent, useCallback, useEffect, useState } from "react";
 import { AdminError, type AdminPlaylist, type AdminTrack, adminApi, formatDuration, formatSize, tokenStore } from "@/lib/admin-api";
+import { config } from "@/lib/config";
 import { ThemeToggle } from "../ThemeToggle";
 import s from "./admin.module.css";
 
@@ -137,6 +138,7 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
 
   return (
     <>
+      <GoingLive tracks={tracks} />
       <Upload onUploaded={reload} onError={fail} />
       <Tracks tracks={tracks} reload={reload} onError={fail} />
       <Playlists tracks={tracks ?? []} onError={fail} />
@@ -146,6 +148,49 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
         </p>
       ) : null}
     </>
+  );
+}
+
+/* ---------------- going live ---------------- */
+function GoingLive({ tracks }: { tracks: AdminTrack[] | null }) {
+  const host = (() => {
+    try {
+      return new URL(config.apiUrl).hostname;
+    } catch {
+      return "your API domain";
+    }
+  })();
+  const repeating = tracks?.find((t) => t.onRepeat);
+  const rows: [string, string][] = [
+    ["Server", host],
+    ["Port", "8005"],
+    ["Mount", "live-in"],
+    ["User", "source"],
+    ["Password", "LIVE_PASSWORD in the server's infra/.env"],
+    ["Format", "MP3 320 kbps (or AAC), stereo, 44.1 kHz"],
+  ];
+  return (
+    <section className={s.section} aria-labelledby="live-h">
+      <h2 id="live-h" className={s.h2}>
+        <span className={s.balloon} aria-hidden="true">0</span>GOING LIVE
+      </h2>
+      <p className={s.note}>
+        In BUTT (or Mixxx / OBS) add an Icecast server with these settings and press play. The station switches to the live show
+        within a few seconds. When the show ends, its recording appears below and plays on repeat. Turn on “update song name” so
+        the show title reaches the website.
+      </p>
+      <dl className={s.liveGrid}>
+        {rows.map(([k, v]) => (
+          <div key={k}>
+            <dt className={s.label}>{k.toUpperCase()}</dt>
+            <dd>{v}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className={s.note}>
+        On repeat now: <strong>{repeating ? repeating.title : "nothing (the library plays on shuffle)"}</strong>
+      </p>
+    </section>
   );
 }
 
@@ -271,6 +316,16 @@ function Tracks({ tracks, reload, onError }: { tracks: AdminTrack[] | null; relo
     }
   }
 
+  async function setRepeat(id: number | null) {
+    try {
+      await adminApi.setRepeat(id);
+      setStatus(id === null ? "Repeat stopped. The station plays the library on shuffle." : "On repeat now. The station switches to it within seconds.");
+      await reload();
+    } catch (err) {
+      onError(err);
+    }
+  }
+
   async function scan() {
     try {
       const r = await adminApi.scan();
@@ -349,6 +404,8 @@ function Tracks({ tracks, reload, onError }: { tracks: AdminTrack[] | null; relo
                   <tr key={t.id}>
                     <td>
                       {t.title}
+                      {t.source === "live" ? <span className={s.tag}>LIVE REC</span> : null}
+                      {t.onRepeat ? <span className={`${s.tag} ${s.tagHot}`}>ON REPEAT</span> : null}
                       {t.onDisk ? null : <span className={s.missing}> · FILE MISSING</span>}
                     </td>
                     <td>{t.artist ?? "—"}</td>
@@ -369,6 +426,15 @@ function Tracks({ tracks, reload, onError }: { tracks: AdminTrack[] | null; relo
                           </>
                         ) : (
                           <>
+                            <button
+                              type="button"
+                              className={`${s.btn} ${s.small}`}
+                              onClick={() => void setRepeat(t.onRepeat ? null : t.id)}
+                              aria-pressed={t.onRepeat}
+                              disabled={!t.onDisk}
+                            >
+                              {t.onRepeat ? "STOP REPEAT" : "REPEAT"}
+                            </button>
                             <button
                               type="button"
                               className={`${s.btn} ${s.small}`}

@@ -12,11 +12,13 @@ export function StationStatus() {
       ? "RECONNECTING"
       : !nowPlaying
         ? "OFF AIR"
-        : nowPlaying.isFallback
-          ? "STATION BREAK"
-          : "ON AIR";
+        : nowPlaying.isLive
+          ? "● LIVE"
+          : nowPlaying.isFallback
+            ? "STATION BREAK"
+            : "ON AIR";
   return (
-    <div className={`${s.cell} ${s.cellEnd} ${label === "ON AIR" ? s.cellLive : ""}`}>
+    <div className={`${s.cell} ${s.cellEnd} ${label === "ON AIR" || label === "● LIVE" ? s.cellLive : ""}`}>
       <dt>STATUS</dt>
       <dd>{label}</dd>
     </div>

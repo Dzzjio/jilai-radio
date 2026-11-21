@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   bigserial,
+  boolean,
   check,
   index,
   integer,
@@ -25,9 +26,16 @@ export const tracks = pgTable(
     album: text("album"),
     durationSec: integer("duration_sec"),
     sizeBytes: integer("size_bytes"),
+    /** How the file arrived: "upload" (admin), "live" (recorded show), "folder" (copied in / first played). */
+    source: text("source").notNull().default("upload"),
+    /** The track the station repeats after a live show. At most one row is true. */
+    onRepeat: boolean("on_repeat").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("tracks_filename_idx").on(t.filename)],
+  (t) => [
+    uniqueIndex("tracks_filename_idx").on(t.filename),
+    uniqueIndex("tracks_one_repeat_idx").on(t.onRepeat).where(sql`${t.onRepeat}`),
+  ],
 );
 
 export const playlists = pgTable("playlists", {

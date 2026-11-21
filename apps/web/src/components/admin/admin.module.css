@@ -342,3 +342,37 @@
   margin: 0;
   font-size: 13px;
 }
+
+/* live + repeat */
+.tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border: 1px solid var(--ink);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  vertical-align: middle;
+}
+.tagHot {
+  background: var(--hot);
+  border-color: var(--hot);
+  color: var(--on-hot);
+}
+.liveGrid {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  border: 1.5px solid var(--ink);
+}
+.liveGrid > div {
+  padding: 8px 12px;
+  border-right: 1px solid var(--dim);
+  border-bottom: 1px solid var(--dim);
+}
+.liveGrid dd {
+  margin: 2px 0 0;
+  font-weight: 700;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}

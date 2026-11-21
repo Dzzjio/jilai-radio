@@ -10,6 +10,9 @@ export interface AdminTrack {
   sizeBytes: number | null;
   createdAt: string;
   onDisk: boolean;
+  /** "upload" | "live" (a recorded show) | "folder" */
+  source: string;
+  onRepeat: boolean;
 }
 
 export interface AdminPlaylist {
@@ -78,6 +81,7 @@ export const adminApi = {
   tracks: () => request<{ items: AdminTrack[] }>("GET", "/admin/tracks").then((r) => r.items),
   updateTrack: (id: number, patch: Partial<Pick<AdminTrack, "title" | "artist" | "album">>) => request<AdminTrack>("PATCH", `/admin/tracks/${id}`, patch),
   deleteTrack: (id: number) => request<void>("DELETE", `/admin/tracks/${id}`),
+  setRepeat: (trackId: number | null) => request<{ onRepeat: AdminTrack | null }>("PUT", "/admin/repeat", { trackId }),
   scan: () => request<{ added: number; updated: number; skipped: string[] }>("POST", "/admin/tracks/scan"),
   playlists: () => request<{ items: AdminPlaylist[] }>("GET", "/admin/playlists").then((r) => r.items),
   playlist: (id: number) => request<AdminPlaylist & { tracks: AdminTrack[] }>("GET", `/admin/playlists/${id}`),

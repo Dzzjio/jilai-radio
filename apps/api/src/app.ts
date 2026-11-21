@@ -6,6 +6,7 @@ import type { Env } from "./env.js";
 import { adminRoutes } from "./routes/admin.js";
 import { internalRoutes } from "./routes/internal.js";
 import { publicRoutes } from "./routes/public.js";
+import { LiveService } from "./services/live.js";
 import { RadioState } from "./state.js";
 import { wsRoutes } from "./ws.js";
 
@@ -13,6 +14,7 @@ declare module "fastify" {
   interface FastifyInstance {
     db: Db;
     radio: RadioState;
+    live: LiveService;
   }
 }
 
@@ -33,6 +35,17 @@ export async function buildApp({ env, db, radio = new RadioState(), logger }: Ap
 
   app.decorate("db", db);
   app.decorate("radio", radio);
+  app.decorate(
+    "live",
+    new LiveService({
+      db,
+      log: app.log,
+      musicDir: env.MUSIC_DIR,
+      liquidsoapMusicDir: env.LIQUIDSOAP_MUSIC_DIR,
+      recordingsDir: env.RECORDINGS_DIR,
+      ffprobePath: env.FFPROBE_PATH,
+    }),
+  );
 
   await app.register(cors, { origin: env.CORS_ORIGIN, methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"] });
   await app.register(websocket, { options: { maxPayload: 1024 } });

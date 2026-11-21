@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { access, constants } from "node:fs/promises";
+import { access, chmod, constants, copyFile, rename, unlink } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 
@@ -91,4 +91,19 @@ export async function uniqueFilename(dir: string, filename: string): Promise<str
 
 export function titleFromFilename(filename: string) {
   return path.basename(filename).replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim() || "Untitled";
+}
+
+/** Moves a file into the music folder without Liquidsoap ever seeing a half-written MP3. */
+export async function placeInMusicDir(srcFile: string, musicDir: string, filename: string): Promise<string> {
+  const dest = safeJoin(musicDir, filename);
+  const partial = safeJoin(musicDir, `.${filename}.part`);
+  try {
+    await rename(srcFile, partial);
+  } catch {
+    await copyFile(srcFile, partial); // different filesystems (Docker volumes)
+    await unlink(srcFile).catch(() => {});
+  }
+  await chmod(partial, 0o644); // Liquidsoap may run as a different user and only needs to read
+  await rename(partial, dest);
+  return dest;
 }

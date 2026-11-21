@@ -33,3 +33,9 @@ process.once("SIGINT", () => void shutdown("SIGINT"));
 process.once("SIGTERM", () => void shutdown("SIGTERM"));
 
 await app.listen({ host: env.HOST, port: env.PORT });
+
+// A show that ended while the API was down left its recording behind: save it now.
+app.live
+  .recoverLeftovers()
+  .then((n) => n && app.log.info({ count: n }, "recovered live recordings"))
+  .catch((err) => app.log.warn({ err }, "could not check for leftover recordings"));

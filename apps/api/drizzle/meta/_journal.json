@@ -8,6 +8,13 @@
       "when": 1795185084319,
       "tag": "0000_mushy_maggott",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1795251386760,
+      "tag": "0001_nebulous_lester",
+      "breakpoints": true
     }
   ]
 }

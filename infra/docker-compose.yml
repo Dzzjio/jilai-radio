@@ -46,6 +46,8 @@ services:
     image: savonet/liquidsoap:v2.4.6
     restart: unless-stopped
     command: ["/radio/radio.liq"]
+    # Same user as the API container, so both can read/move/delete live recordings.
+    user: "1000:1000"
     depends_on:
       icecast:
         condition: service_healthy
@@ -62,10 +64,21 @@ services:
       STATION_URL: ${STATION_URL:-http://localhost:3000}
       STREAM_BITRATE: ${STREAM_BITRATE:-128}
       CROSSFADE_SECONDS: ${CROSSFADE_SECONDS:-5.}
+      # Running as uid 1000 has no home dir; give Liquidsoap a writable one for its script cache.
+      HOME: /tmp
+      # Live input for the DJ's streaming app (BUTT etc.)
+      LIVE_PASSWORD: ${LIVE_PASSWORD:-}
+      LIVE_PORT: "8005"
+      LIVE_MOUNT: live-in
+      RECORDINGS_DIR: /recordings
+    ports:
+      # Local dev: localhost only. Production: LIVE_BIND=0.0.0.0 so the DJ can connect (open 8005 in the firewall).
+      - "${LIVE_BIND:-127.0.0.1}:${LIVE_PORT:-8005}:8005"
     volumes:
       - ./liquidsoap:/radio:ro
       - ./fallback:/fallback:ro
       - ${MUSIC_HOST_DIR:-./music}:/music:ro
+      - ${RECORDINGS_HOST_DIR:-./recordings}:/recordings
     extra_hosts:
       # Lets Liquidsoap reach an API running on the host during local dev.
       - "host.docker.internal:host-gateway"
@@ -95,6 +108,8 @@ services:
       ICECAST_MOUNT: /live
       LIQUIDSOAP_MUSIC_DIR: /music
       MUSIC_DIR: /music
+      RECORDINGS_DIR: /recordings
+      LIQUIDSOAP_RECORDINGS_DIR: /recordings
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-300}
       CORS_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
       # The API refuses to start if these are missing or too short.
@@ -103,6 +118,8 @@ services:
     volumes:
       # Same folder Liquidsoap plays from; the API writes uploads here (container user uid 1000).
       - ${MUSIC_HOST_DIR:-./music}:/music
+      # Live recordings land here first; the API moves finished ones into /music.
+      - ${RECORDINGS_HOST_DIR:-./recordings}:/recordings
 
   caddy:
     profiles: ["prod"]

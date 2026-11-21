@@ -8,6 +8,8 @@ export interface NowPlaying {
   startedAt: string;
   /** True while the fallback jingle/silence is on air (no music available). */
   isFallback: boolean;
+  /** True while a live show is on air. */
+  isLive: boolean;
 }
 
 export interface HistoryItem {

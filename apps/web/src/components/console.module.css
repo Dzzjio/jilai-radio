@@ -565,3 +565,19 @@
   background: var(--ink);
   color: var(--paper);
 }
+
+/* live badge */
+.chips {
+  display: inline-flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.chipPulse {
+  animation: live-pulse 1.6s ease-in-out infinite;
+}
+@keyframes live-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}

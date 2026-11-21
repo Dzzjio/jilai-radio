@@ -5,6 +5,12 @@
 # Icecast's own pages (/stats.xsl, /admin) are not exposed.
 
 {$PUBLIC_HOST} {
+	# Liquidsoap talks to the API directly on the Docker network; never from outside.
+	@internal path /internal /internal/*
+	handle @internal {
+		respond 404
+	}
+
 	@stream path /stream
 	handle @stream {
 		rewrite * /live

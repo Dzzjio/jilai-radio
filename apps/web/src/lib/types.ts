@@ -7,6 +7,8 @@ export interface NowPlaying {
   album: string | null;
   startedAt: string;
   isFallback: boolean;
+  /** True while the DJ is broadcasting live. */
+  isLive: boolean;
 }
 
 export interface HistoryItem {
