@@ -9,12 +9,14 @@ import type { FastifyPluginAsync, FastifyReply } from "fastify";
 import { z } from "zod";
 import { issueToken, LoginLimiter, safeEqual, verifyToken } from "../auth.js";
 import { playlists, playlistTracks, tracks } from "../db/schema.js";
-import { isMp3, placeInMusicDir, probe, safeJoin, slugFilename, titleFromFilename, uniqueFilename } from "../media.js";
+import { isMp3, MediaError, placeInMusicDir, probe, processBackground, safeJoin, slugFilename, titleFromFilename, uniqueFilename } from "../media.js";
+import { getAppearance, MAX_TEXT_LENGTH, setBackground, setText } from "../services/appearance.js";
 
 export interface AdminOptions {
   password: string;
   sessionSecret: string;
   musicDir: string;
+  mediaDir: string;
   maxUploadBytes: number;
   ffprobePath: string;
 }
@@ -32,6 +34,12 @@ const playlistBody = z
   .strict();
 const playlistPatch = playlistBody.partial().strict();
 const playlistTrackIds = z.object({ trackIds: z.array(z.number().int().positive()).max(5000) }).strict();
+
+const appearanceText = z
+  .object({ text: z.string().max(MAX_TEXT_LENGTH * 2).nullable() })
+  .strict()
+  .transform((b) => (b.text && b.text.trim() ? b.text.trim() : null))
+  .refine((t) => t === null || t.length <= MAX_TEXT_LENGTH, `text: at most ${MAX_TEXT_LENGTH} characters`);
 
 const blank = (v: string | null | undefined) => (v && v.trim() ? v.trim() : null);
 
@@ -290,4 +298,53 @@ export const adminRoutes: FastifyPluginAsync<AdminOptions> = async (app, opts) =
     });
     return reply.code(204).send();
   });
+
+  // ---- site appearance (home page background + text) ----
+  app.get("/appearance", async () => getAppearance(app.db));
+
+  app.put("/appearance/text", async (req, reply) => {
+    const body = appearanceText.safeParse(req.body ?? {});
+    if (!body.success) return badRequest(reply, body.error);
+    return setText(app.db, body.data);
+  });
+
+  app.post("/appearance/background", async (req, reply) => {
+    if (!req.isMultipart()) return reply.code(415).send({ error: "Send the file as multipart/form-data." });
+    const workDir = await mkdtemp(path.join(tmpdir(), "radio-jil-bg-"));
+    try {
+      let tmp: string | null = null;
+      for await (const part of req.parts()) {
+        if (part.type === "field") continue;
+        if (part.fieldname !== "file" || tmp) {
+          part.file.resume();
+          continue;
+        }
+        const dest = path.join(workDir, "upload");
+        await pipeline(part.file, createWriteStream(dest));
+        if (part.file.truncated) {
+          return reply.code(413).send({ error: `File is larger than ${Math.round(opts.maxUploadBytes / 1024 / 1024)} MB.` });
+        }
+        tmp = dest;
+      }
+      if (!tmp) return reply.code(400).send({ error: 'No file. Send it in a field named "file".' });
+
+      let bg;
+      try {
+        bg = await processBackground(tmp, opts.mediaDir, { ffprobePath: opts.ffprobePath });
+      } catch (err) {
+        if (err instanceof MediaError) {
+          req.log.warn({ code: err.code, cause: err.cause }, "site background rejected");
+          const error = err.code === "too-long" ? "Videos can be at most 60 seconds long." : "That file isn't a video or photo.";
+          return reply.code(422).send({ error });
+        }
+        throw err;
+      }
+      req.log.info({ kind: bg.kind, file: bg.file }, "site background uploaded");
+      return setBackground(app.db, opts.mediaDir, bg);
+    } finally {
+      await rm(workDir, { recursive: true, force: true });
+    }
+  });
+
+  app.delete("/appearance/background", async () => setBackground(app.db, opts.mediaDir, null));
 };

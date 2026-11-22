@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { DEFAULT_BACKGROUND, type ResolvedBackground } from "@/lib/appearance";
 import { useAudio, useLive } from "@/lib/radio-client";
 import { site } from "@/lib/site";
 import { useMediaSession } from "@/lib/use-media-session";
@@ -13,8 +14,16 @@ const statusText = {
   error: "The stream is unavailable right now. Try again in a moment.",
 } as const;
 
-/** Full-screen looping background video. Stays on its poster frame for reduced-motion users. */
-export function BgVideo() {
+/** Full-screen background: a looping video (still on its poster for reduced-motion users) or a photo. */
+export function Background({ kind, src, poster }: ResolvedBackground) {
+  if (kind === "image") {
+    // eslint-disable-next-line @next/next/no-img-element -- served by our API, already sized for the web
+    return <img className={s.bg} src={src} alt="" aria-hidden="true" fetchPriority="high" />;
+  }
+  return <BgVideo key={src} src={src} poster={poster} fog={src === DEFAULT_BACKGROUND.src} />;
+}
+
+function BgVideo({ src, poster, fog }: { src: string; poster: string | null; fog: boolean }) {
   const ref = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -40,9 +49,9 @@ export function BgVideo() {
   return (
     <video
       ref={ref}
-      className={s.bg}
-      src="/bg.mp4"
-      poster="/bg.jpg"
+      className={fog ? `${s.bg} ${s.bgFog}` : s.bg}
+      src={src}
+      poster={poster ?? undefined}
       muted
       loop
       playsInline

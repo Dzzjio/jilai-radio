@@ -1,3 +1,5 @@
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { sql as dsql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import type { WebSocket } from "ws";
@@ -10,7 +12,7 @@ import { testDatabaseUrl } from "./db-url.js";
 export const SECRET = "test-internal-secret";
 export const ADMIN_PASSWORD = "test-admin-password-123";
 
-export function testEnv(overrides: { MUSIC_DIR?: string; RECORDINGS_DIR?: string } = {}) {
+export function testEnv(overrides: { MUSIC_DIR?: string; RECORDINGS_DIR?: string; MEDIA_DIR?: string } = {}) {
   return loadEnv({
     DATABASE_URL: testDatabaseUrl(),
     INTERNAL_SECRET: SECRET,
@@ -20,14 +22,15 @@ export function testEnv(overrides: { MUSIC_DIR?: string; RECORDINGS_DIR?: string
     ADMIN_SESSION_SECRET: "test-session-secret-0123456789abcdef0123456789",
     MUSIC_DIR: overrides.MUSIC_DIR ?? "/nonexistent-music-dir",
     RECORDINGS_DIR: overrides.RECORDINGS_DIR ?? "/nonexistent-recordings-dir",
+    MEDIA_DIR: overrides.MEDIA_DIR ?? path.join(tmpdir(), "rj-test-media"),
   });
 }
 
 /** Truncates every table, then builds a fresh app (fresh in-memory state). */
-export async function setupTestApp(overrides: { MUSIC_DIR?: string; RECORDINGS_DIR?: string } = {}) {
+export async function setupTestApp(overrides: { MUSIC_DIR?: string; RECORDINGS_DIR?: string; MEDIA_DIR?: string } = {}) {
   const env = testEnv(overrides);
   const { db, sql } = createDb(env.DATABASE_URL);
-  await db.execute(dsql`truncate play_history, playlist_tracks, schedule, playlists, tracks restart identity cascade`);
+  await db.execute(dsql`truncate play_history, playlist_tracks, schedule, playlists, tracks, site_appearance restart identity cascade`);
   const radio = new RadioState();
   const app = await buildApp({ env, db, radio, logger: false });
   await app.ready();

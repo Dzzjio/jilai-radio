@@ -4,6 +4,7 @@ import Link from "next/link";
 import { type DragEvent, type FormEvent, useCallback, useEffect, useState } from "react";
 import { AdminError, type AdminPlaylist, type AdminTrack, adminApi, formatDuration, formatSize, tokenStore } from "@/lib/admin-api";
 import { config } from "@/lib/config";
+import type { Appearance } from "@/lib/types";
 import { ThemeToggle } from "../ThemeToggle";
 import s from "./admin.module.css";
 
@@ -138,6 +139,7 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
 
   return (
     <>
+      <Look onError={fail} />
       <GoingLive tracks={tracks} />
       <Upload onUploaded={reload} onError={fail} />
       <Tracks tracks={tracks} reload={reload} onError={fail} />
@@ -148,6 +150,155 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
         </p>
       ) : null}
     </>
+  );
+}
+
+/* ---------------- home page look ---------------- */
+const MAX_TEXT = 1000;
+const apiSrc = (p: string) => `${config.apiUrl}${p}`;
+
+function Look({ onError }: { onError: (err: unknown) => void }) {
+  const [look, setLook] = useState<Appearance | null>(null);
+  const [text, setText] = useState("");
+  const [textState, setTextState] = useState<"idle" | "saving" | "saved">("idle");
+  const [upload, setUpload] = useState<{ state: "idle" | "uploading" | "processing" | "done" | "error"; progress: number; detail: string }>({
+    state: "idle",
+    progress: 0,
+    detail: "",
+  });
+  const busy = upload.state === "uploading" || upload.state === "processing";
+
+  useEffect(() => {
+    let alive = true;
+    adminApi.appearance().then((a) => {
+      if (!alive) return;
+      setLook(a);
+      setText(a.text ?? "");
+    }, onError);
+    return () => {
+      alive = false;
+    };
+  }, [onError]);
+
+  async function saveText(e: FormEvent) {
+    e.preventDefault();
+    setTextState("saving");
+    try {
+      const a = await adminApi.saveText(text.trim() ? text : null);
+      setLook(a);
+      setText(a.text ?? "");
+      setTextState("saved");
+    } catch (err) {
+      setTextState("idle");
+      onError(err);
+    }
+  }
+
+  async function uploadBackground(file: File) {
+    setUpload({ state: "uploading", progress: 0, detail: "" });
+    try {
+      const a = await adminApi.uploadBackground(file, (progress) =>
+        setUpload({ state: progress >= 1 ? "processing" : "uploading", progress, detail: "" }),
+      );
+      setLook(a);
+      setUpload({ state: "done", progress: 1, detail: "Saved. The site updates within a minute." });
+    } catch (err) {
+      if (err instanceof AdminError && err.status === 401) return onError(err);
+      setUpload({ state: "error", progress: 0, detail: message(err) });
+    }
+  }
+
+  async function reset() {
+    try {
+      setLook(await adminApi.resetBackground());
+      setUpload({ state: "done", progress: 1, detail: "Back to the default fog video. The site updates within a minute." });
+    } catch (err) {
+      onError(err);
+    }
+  }
+
+  const bg = look?.background;
+
+  return (
+    <section className={s.section} aria-labelledby="look-h">
+      <h2 id="look-h" className={s.h2}>
+        HOME PAGE LOOK
+      </h2>
+      <p className={s.note}>The background and the text on the home page. Changes show up on the site within a minute.</p>
+
+      <form className={s.lookText} onSubmit={saveText}>
+        <label htmlFor="look-text" className={s.label}>
+          TEXT
+        </label>
+        <textarea
+          id="look-text"
+          className={`${s.input} ${s.textarea}`}
+          value={text}
+          maxLength={MAX_TEXT}
+          rows={6}
+          placeholder="Empty = the default text"
+          onChange={(e) => {
+            setText(e.currentTarget.value);
+            setTextState("idle");
+          }}
+        />
+        <div className={s.row}>
+          <button type="submit" className={s.btnSolid} disabled={textState === "saving" || look === null}>
+            {textState === "saving" ? "SAVING…" : "SAVE TEXT"}
+          </button>
+          <span className={s.note} aria-live="polite">
+            {text.length} / {MAX_TEXT}
+            {textState === "saved" ? " · saved" : ""}
+          </span>
+        </div>
+      </form>
+
+      <div className={s.lookBg}>
+        <span className={s.label}>BACKGROUND</span>
+        <div className={s.lookPreview}>
+          {bg?.kind === "image" ? (
+            // eslint-disable-next-line @next/next/no-img-element -- small admin preview from our API
+            <img src={apiSrc(bg.url)} alt="Current background" />
+          ) : bg?.kind === "video" ? (
+            <video src={apiSrc(bg.url)} poster={bg.poster ? apiSrc(bg.poster) : undefined} muted loop playsInline autoPlay aria-label="Current background video" />
+          ) : (
+            <video src="/bg.mp4" poster="/bg.jpg" muted loop playsInline autoPlay aria-label="Default fog background video" />
+          )}
+        </div>
+        <p className={s.note}>
+          {bg ? (bg.kind === "video" ? "Your video." : "Your photo.") : "The default fog video."} Upload a video (up to 60 seconds) or a
+          photo to replace it. Videos lose their sound and get resized for the web.
+        </p>
+        <div className={s.row}>
+          <label className={`${s.btnSolid} ${s.fileLabel}`}>
+            {upload.state === "uploading" ? `UPLOADING ${Math.round(upload.progress * 100)} %` : upload.state === "processing" ? "PROCESSING…" : "CHOOSE VIDEO OR PHOTO"}
+            <input
+              type="file"
+              accept="video/*,image/*"
+              disabled={busy}
+              onChange={(e) => {
+                const file = e.currentTarget.files?.[0];
+                e.currentTarget.value = "";
+                if (file) void uploadBackground(file);
+              }}
+            />
+          </label>
+          {bg ? (
+            <button type="button" className={s.btn} onClick={() => void reset()} disabled={busy}>
+              RESET TO DEFAULT
+            </button>
+          ) : null}
+        </div>
+        {busy ? (
+          <span className={s.bar} aria-hidden="true">
+            <span className={s.barFill} style={{ width: `${Math.round(upload.progress * 100)}%` }} />
+          </span>
+        ) : null}
+        <p className={upload.state === "error" ? s.err : s.ok} role="status" aria-live="polite">
+          {upload.state === "processing" ? "Processing on the server… this can take a minute for longer videos." : upload.detail}
+        </p>
+      </div>
+    </section>
   );
 }
 

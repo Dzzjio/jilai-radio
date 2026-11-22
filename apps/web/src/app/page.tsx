@@ -1,25 +1,25 @@
 import { Suspense } from "react";
-import { BgVideo, Listeners, SimplePlayer } from "@/components/SimplePlayer";
+import { Background, Listeners, SimplePlayer } from "@/components/SimplePlayer";
 import s from "@/components/simple.module.css";
+import { loadAppearance } from "@/lib/appearance";
 import { site } from "@/lib/site";
 
-// Fully static: the HTML is built ahead of time. Live parts hydrate on top.
-export const dynamic = "force-static";
+// Static HTML, re-built at most once a minute so the admin's background and text show up
+// without a redeploy (see lib/appearance). Live parts hydrate on top.
+export const revalidate = 60;
 
-export default function HomePage() {
+export default async function HomePage() {
+  const { text, background } = await loadAppearance();
   return (
     <div className={s.root}>
-      <BgVideo />
+      <Background {...background} />
       <div className={s.scrim} aria-hidden="true" />
       <main className={s.main}>
         <h1 className="sr-only">{site.name}</h1>
         <Suspense>
           <SimplePlayer />
         </Suspense>
-        <p className={s.text}>
-          Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et
-          dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.
-        </p>
+        <p className={s.text}>{text}</p>
         <Suspense>
           <Listeners />
         </Suspense>

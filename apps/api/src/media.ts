@@ -107,3 +107,102 @@ export async function placeInMusicDir(srcFile: string, musicDir: string, filenam
   await rename(partial, dest);
   return dest;
 }
+
+// ---------------- site background (video or photo) ----------------
+
+export class MediaError extends Error {
+  constructor(
+    readonly code: "unreadable" | "too-long",
+    options?: { cause?: unknown },
+  ) {
+    super(code === "too-long" ? "video is too long" : "not a video or image", options);
+    this.name = "MediaError";
+  }
+}
+
+export interface VisualInfo {
+  kind: "video" | "image";
+  durationSec: number;
+  width: number;
+  height: number;
+}
+
+interface VisualJson {
+  format?: { format_name?: string; duration?: string };
+  streams?: { codec_type?: string; width?: number; height?: number; nb_frames?: string; duration?: string }[];
+}
+
+/** Reads the first video stream. Throws MediaError("unreadable") for anything without one. */
+export async function probeVisual(file: string, ffprobePath = "ffprobe"): Promise<VisualInfo> {
+  let data: VisualJson;
+  try {
+    const { stdout } = await run(ffprobePath, ["-v", "error", "-print_format", "json", "-show_format", "-show_streams", file], {
+      timeout: 30_000,
+      maxBuffer: 4 * 1024 * 1024,
+    });
+    data = JSON.parse(stdout) as VisualJson;
+  } catch {
+    throw new MediaError("unreadable");
+  }
+  const video = data.streams?.find((s) => s.codec_type === "video" && s.width && s.height);
+  if (!video) throw new MediaError("unreadable");
+  const formatName = data.format?.format_name ?? "";
+  const duration = Number(data.format?.duration ?? video.duration ?? 0) || 0;
+  const isImage = /image2|_pipe/.test(formatName) || (duration === 0 && (video.nb_frames === undefined || video.nb_frames === "1"));
+  return { kind: isImage ? "image" : "video", durationSec: duration, width: video.width!, height: video.height! };
+}
+
+const fitBox = (edge: number) =>
+  `scale=w='min(${edge},iw)':h='min(${edge},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2`;
+
+/**
+ * Turns an uploaded video or photo into a web-friendly background inside `outDir`:
+ * video → silent H.264 mp4 (long edge ≤ 1920, fast start) + poster jpg; photo → jpg (long edge ≤ 2560).
+ * Runs ffmpeg at the lowest CPU priority on one thread so the stream isn't disturbed.
+ * Videos are capped at 30 fps and ~2 Mbit/s so phones don't download tens of MB.
+ * Only a file ffmpeg can't decode becomes MediaError("unreadable"); disk, permission,
+ * missing-ffmpeg and timeout errors are thrown as they are.
+ * Returns bare filenames.
+ */
+export async function processBackground(
+  input: string,
+  outDir: string,
+  opts: { ffmpegPath?: string; ffprobePath?: string; maxVideoSec?: number } = {},
+): Promise<{ kind: "video" | "image"; file: string; poster: string | null }> {
+  const info = await probeVisual(input, opts.ffprobePath);
+  if (info.kind === "video" && info.durationSec > (opts.maxVideoSec ?? 60)) throw new MediaError("too-long");
+
+  await access(outDir, constants.W_OK); // a folder problem is not the file's fault
+
+  const stem = `bg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const ffmpeg = (args: string[]) =>
+    run("nice", ["-n", "19", opts.ffmpegPath ?? "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-threads", "1", "-i", input, "-threads", "1", "-filter_threads", "1", ...args], {
+      timeout: 10 * 60_000,
+      maxBuffer: 4 * 1024 * 1024,
+    });
+
+  const created: string[] = [];
+  try {
+    if (info.kind === "image") {
+      const file = `${stem}.jpg`;
+      created.push(file);
+      await ffmpeg(["-vf", fitBox(2560), "-frames:v", "1", "-q:v", "3", path.join(outDir, file)]);
+      return { kind: "image", file, poster: null };
+    }
+    const file = `${stem}.mp4`;
+    const poster = `${stem}-poster.jpg`;
+    created.push(file, poster);
+    await ffmpeg([
+      "-t", "60", "-an", "-vf", fitBox(1920), "-fpsmax", "30",
+      "-c:v", "libx264", "-preset", "veryfast", "-crf", "26", "-maxrate", "2M", "-bufsize", "4M",
+      "-pix_fmt", "yuv420p", "-movflags", "+faststart", path.join(outDir, file),
+    ]);
+    await ffmpeg(["-vf", fitBox(1920), "-frames:v", "1", "-q:v", "3", path.join(outDir, poster)]);
+    return { kind: "video", file, poster };
+  } catch (err) {
+    await Promise.all(created.map((f) => unlink(path.join(outDir, f)).catch(() => {})));
+    const e = err as { killed?: boolean; code?: unknown };
+    if (err instanceof MediaError || e.killed || e.code === "ENOENT" || e.code === "EACCES") throw err;
+    throw new MediaError("unreadable", { cause: err }); // ffmpeg couldn't decode it
+  }
+}

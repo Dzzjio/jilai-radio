@@ -1,4 +1,5 @@
 import { config } from "./config";
+import type { Appearance } from "./types";
 
 export interface AdminTrack {
   id: number;
@@ -59,6 +60,33 @@ export class AdminError extends Error {
   }
 }
 
+/** Multipart upload with progress (fetch can't report upload progress). */
+function xhrUpload<T>(path: string, file: File, onProgress: (fraction: number) => void): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${config.apiUrl}${path}`);
+    const token = tokenStore.get();
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    xhr.upload.addEventListener("progress", (e) => {
+      if (e.lengthComputable) onProgress(e.loaded / e.total);
+    });
+    xhr.addEventListener("load", () => {
+      let data: { error?: string } = {};
+      try {
+        data = JSON.parse(xhr.responseText);
+      } catch {
+        // non-JSON error page
+      }
+      if (xhr.status >= 200 && xhr.status < 300) resolve(data as T);
+      else reject(new AdminError(data.error ?? `Upload failed (${xhr.status})`, xhr.status));
+    });
+    xhr.addEventListener("error", () => reject(new AdminError("Network error: is the API reachable?", 0)));
+    const form = new FormData();
+    form.append("file", file);
+    xhr.send(form);
+  });
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const token = tokenStore.get();
   const res = await fetch(`${config.apiUrl}${path}`, {
@@ -90,32 +118,16 @@ export const adminApi = {
   deletePlaylist: (id: number) => request<void>("DELETE", `/admin/playlists/${id}`),
   setPlaylistTracks: (id: number, trackIds: number[]) => request<void>("PUT", `/admin/playlists/${id}/tracks`, { trackIds }),
 
-  /** Upload with progress (fetch can't report upload progress). */
-  upload(file: File, onProgress: (fraction: number) => void): Promise<AdminTrack> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open("POST", `${config.apiUrl}/admin/tracks`);
-      const token = tokenStore.get();
-      if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-      xhr.upload.addEventListener("progress", (e) => {
-        if (e.lengthComputable) onProgress(e.loaded / e.total);
-      });
-      xhr.addEventListener("load", () => {
-        let data: { error?: string } = {};
-        try {
-          data = JSON.parse(xhr.responseText);
-        } catch {
-          // non-JSON error page
-        }
-        if (xhr.status >= 200 && xhr.status < 300) resolve(data as AdminTrack);
-        else reject(new AdminError(data.error ?? `Upload failed (${xhr.status})`, xhr.status));
-      });
-      xhr.addEventListener("error", () => reject(new AdminError("Network error: is the API reachable?", 0)));
-      const form = new FormData();
-      form.append("file", file);
-      xhr.send(form);
-    });
-  },
+  /** Upload an MP3 with progress. */
+  upload: (file: File, onProgress: (fraction: number) => void) => xhrUpload<AdminTrack>("/admin/tracks", file, onProgress),
+
+  // ---- site appearance (home page background + text) ----
+  appearance: () => request<Appearance>("GET", "/admin/appearance"),
+  saveText: (text: string | null) => request<Appearance>("PUT", "/admin/appearance/text", { text }),
+  /** Upload a background video or photo; the server processes it before answering. */
+  uploadBackground: (file: File, onProgress: (fraction: number) => void) =>
+    xhrUpload<Appearance>("/admin/appearance/background", file, onProgress),
+  resetBackground: () => request<Appearance>("DELETE", "/admin/appearance/background"),
 };
 
 export function formatDuration(sec: number | null): string {

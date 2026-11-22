@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
+import { getAppearance } from "../services/appearance.js";
 import { getRecentHistory } from "../services/history.js";
 
 const historyQuery = z.object({
@@ -27,5 +28,11 @@ export const publicRoutes: FastifyPluginAsync = async (app) => {
     if (!parsed.success) return reply.code(400).send({ error: "limit must be an integer between 1 and 50" });
     reply.header("Cache-Control", "no-store");
     return { items: await getRecentHistory(app.db, parsed.data.limit) };
+  });
+
+  /** The home page's background and text, set in admin. The website re-reads it at most once a minute. */
+  app.get("/appearance", async (_req, reply) => {
+    reply.header("Cache-Control", "no-store");
+    return getAppearance(app.db);
   });
 };

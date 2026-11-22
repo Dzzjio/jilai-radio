@@ -6,7 +6,7 @@
   min-height: 100dvh;
   display: grid;
   place-items: center;
-  overflow: hidden;
+  overflow-x: hidden; /* long text may scroll vertically; the fixed background stays put */
   background: #5f6669; /* fog grey, behind the video while it loads */
   color: #fff;
 }
@@ -24,9 +24,10 @@
   pointer-events: none;
 }
 
-/* Portrait screens crop the sides: keep the misty hill (right of centre) in view. */
+/* Portrait screens crop the sides: for the default fog video, keep the misty hill (right of centre)
+   in view. The admin's own backgrounds stay centred. */
 @media (orientation: portrait) {
-  .bg {
+  .bgFog {
     object-position: 68% 50%;
   }
 }
@@ -96,6 +97,14 @@
   margin: 0;
   font-size: 15px;
   line-height: 1.7;
+  white-space: pre-line; /* keep the admin's line breaks */
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 768px) {
+  .text {
+    max-width: 46ch;
+  }
 }
 
 .error {

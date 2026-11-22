@@ -110,6 +110,7 @@ services:
       MUSIC_DIR: /music
       RECORDINGS_DIR: /recordings
       LIQUIDSOAP_RECORDINGS_DIR: /recordings
+      MEDIA_DIR: /media
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-300}
       CORS_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
       # The API refuses to start if these are missing or too short.
@@ -120,6 +121,8 @@ services:
       - ${MUSIC_HOST_DIR:-./music}:/music
       # Live recordings land here first; the API moves finished ones into /music.
       - ${RECORDINGS_HOST_DIR:-./recordings}:/recordings
+      # The site background the admin uploads (video/photo), served at /media.
+      - ${MEDIA_HOST_DIR:-./media}:/media
 
   caddy:
     profiles: ["prod"]

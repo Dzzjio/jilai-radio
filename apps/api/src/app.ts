@@ -1,5 +1,7 @@
 import Fastify, { type FastifyServerOptions } from "fastify";
+import { mkdir } from "node:fs/promises";
 import cors from "@fastify/cors";
+import fastifyStatic from "@fastify/static";
 import websocket from "@fastify/websocket";
 import type { Db } from "./db/client.js";
 import type { Env } from "./env.js";
@@ -50,6 +52,18 @@ export async function buildApp({ env, db, radio = new RadioState(), logger }: Ap
   await app.register(cors, { origin: env.CORS_ORIGIN, methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"] });
   await app.register(websocket, { options: { maxPayload: 1024 } });
 
+  // Admin-uploaded site background. Filenames are unique per upload, so cache them forever.
+  await mkdir(env.MEDIA_DIR, { recursive: true });
+  await app.register(fastifyStatic, {
+    root: env.MEDIA_DIR,
+    prefix: "/media/",
+    index: false,
+    list: false,
+    dotfiles: "deny",
+    immutable: true,
+    maxAge: "365d",
+  });
+
   await app.register(publicRoutes);
   await app.register(wsRoutes);
   await app.register(internalRoutes, {
@@ -62,6 +76,7 @@ export async function buildApp({ env, db, radio = new RadioState(), logger }: Ap
     password: env.ADMIN_PASSWORD,
     sessionSecret: env.ADMIN_SESSION_SECRET,
     musicDir: env.MUSIC_DIR,
+    mediaDir: env.MEDIA_DIR,
     maxUploadBytes: env.MAX_UPLOAD_MB * 1024 * 1024,
     ffprobePath: env.FFPROBE_PATH,
   });

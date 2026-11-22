@@ -130,11 +130,11 @@ LIVE_PASSWORD=…                               # from above; give it only to th
 LIVE_BIND=0.0.0.0                             # lets the DJ reach port 8005 from the internet
 ```
 
-The API and Liquidsoap containers run as user `1000`, so give them the music and recordings folders, then
+The API and Liquidsoap containers run as user `1000`, so give them the music, recordings and media folders, then
 start everything:
 
 ```bash
-mkdir -p music recordings && sudo chown -R 1000:1000 music recordings
+mkdir -p music recordings media && sudo chown -R 1000:1000 music recordings media
 docker compose up -d --build                  # first build takes a few minutes on ARM
 docker compose ps                             # all services "running", api "healthy"
 curl https://api.radioaha.org/health           # {"ok":true}
@@ -173,7 +173,7 @@ Listen to the raw stream at `https://api.radioaha.org/stream`.
   admin to list them with length and size.
 - **Update the code:** on the server `git pull && docker compose up -d --build`; Vercel redeploys on push.
 - **Logs:** `docker compose logs -f api` (or `liquidsoap`, `caddy`, `icecast`).
-- **Backup:** `docker compose exec postgres pg_dump -U radio radio > radio-$(date +%F).sql`, plus a copy of `infra/music/`.
+- **Backup:** `docker compose exec postgres pg_dump -U radio radio > radio-$(date +%F).sql`, plus a copy of `infra/music/` and `infra/media/` (the site background).
 
 ### Going live (for the DJ)
 

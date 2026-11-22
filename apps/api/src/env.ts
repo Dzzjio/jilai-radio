@@ -1,3 +1,4 @@
+import path from "node:path";
 import { z } from "zod";
 
 const schema = z.object({
@@ -15,6 +16,11 @@ const schema = z.object({
   /** Where Liquidsoap writes live recordings, as seen by the API / by Liquidsoap. */
   RECORDINGS_DIR: z.string().default("/recordings"),
   LIQUIDSOAP_RECORDINGS_DIR: z.string().default("/recordings"),
+  /** Where the admin's site background (video/photo) is stored and served from at /media. */
+  MEDIA_DIR: z
+    .string()
+    .default("/media")
+    .transform((p) => path.resolve(p)),
   MAX_UPLOAD_MB: z.coerce.number().int().min(1).max(2000).default(300),
   FFPROBE_PATH: z.string().default("ffprobe"),
   ADMIN_PASSWORD: z.string().min(12, "ADMIN_PASSWORD must be at least 12 characters"),

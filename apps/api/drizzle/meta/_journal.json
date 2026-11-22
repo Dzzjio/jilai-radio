@@ -15,6 +15,13 @@
       "when": 1795251386760,
       "tag": "0001_nebulous_lester",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795346822391,
+      "tag": "0002_eminent_doctor_doom",
+      "breakpoints": true
     }
   ]
 }

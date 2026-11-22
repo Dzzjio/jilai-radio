@@ -96,5 +96,22 @@ export const schedule = pgTable(
   ],
 );
 
+/** The home page's look, set by the admin. A single row (id = 1); missing row = defaults. */
+export const siteAppearance = pgTable(
+  "site_appearance",
+  {
+    id: integer("id").primaryKey().default(1),
+    /** Plain text block; null = the site's default text. */
+    text: text("text"),
+    /** "video" | "image"; null = the site's default background. */
+    bgKind: text("bg_kind"),
+    /** Filenames inside MEDIA_DIR. */
+    bgFile: text("bg_file"),
+    bgPoster: text("bg_poster"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [check("site_appearance_single_row", sql`${t.id} = 1`)],
+);
+
 export type Track = typeof tracks.$inferSelect;
 export type PlayHistoryRow = typeof playHistory.$inferSelect;

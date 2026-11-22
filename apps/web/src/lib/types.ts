@@ -24,3 +24,10 @@ export type ServerMessage =
   | { type: "snapshot"; nowPlaying: NowPlaying | null; listeners: number | null; history: HistoryItem[] }
   | { type: "now-playing"; nowPlaying: NowPlaying; history: HistoryItem[] }
   | { type: "listeners"; listeners: number };
+
+/** GET /appearance: the home page look set in admin. Paths are relative to the API origin. */
+export interface Appearance {
+  text: string | null;
+  background: { kind: "video" | "image"; url: string; poster: string | null } | null;
+  updatedAt: string | null;
+}
