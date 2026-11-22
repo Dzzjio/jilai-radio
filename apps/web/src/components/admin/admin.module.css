@@ -338,17 +338,15 @@
   flex-direction: column;
   gap: 6px;
 }
-.meter {
-  flex: 1 1 120px;
-  height: 10px;
-  border: 1.5px solid var(--ink);
-  overflow: hidden;
+.scopeWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
 }
-.meterFill {
-  display: block;
-  height: 100%;
-  background: var(--ink);
-  transition: width 0.08s linear;
+.scope {
+  width: min(260px, 100%);
+  aspect-ratio: 1;
 }
 .goLive {
   width: 100%;

@@ -6,40 +6,12 @@ import { config } from "@/lib/config";
 import { type MicTestDeps, startMicTest } from "@/lib/mic-test";
 import { afterShow, type BroadcastState, type Broadcaster, type BroadcasterDeps, createBroadcaster, formatOnAir } from "@/lib/live-broadcast";
 import s from "./admin.module.css";
+import { MicScope } from "./MicScope";
 
 const SAVE_POLL_MS = 2000;
 const SAVE_WAIT_MS = 40_000;
 
 type SaveState = { kind: "none" } | { kind: "saving" } | { kind: "saved"; title: string } | { kind: "too-short" } | { kind: "slow" };
-
-/** Mic level 0…1 from a stream, updated every animation frame. */
-function useLevel(stream: MediaStream | null): number {
-  const [level, setLevel] = useState(0);
-  useEffect(() => {
-    if (!stream) return;
-    const ctx = new AudioContext();
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 1024;
-    ctx.createMediaStreamSource(stream).connect(analyser);
-    const buf = new Float32Array(analyser.fftSize);
-    let raf = 0;
-    const tick = () => {
-      analyser.getFloatTimeDomainData(buf);
-      let sum = 0;
-      for (const v of buf) sum += v * v;
-      // RMS → rough 0…1 meter (−60 dBFS … 0 dBFS)
-      const db = 20 * Math.log10(Math.sqrt(sum / buf.length) || 1e-6);
-      setLevel(Math.min(1, Math.max(0, (db + 60) / 60)));
-      raf = requestAnimationFrame(tick);
-    };
-    tick();
-    return () => {
-      cancelAnimationFrame(raf);
-      void ctx.close();
-    };
-  }, [stream]);
-  return stream ? level : 0;
-}
 
 export function LiveDesk({ tracks, onSaved }: { tracks: AdminTrack[] | null; onSaved: () => void }) {
   const broadcaster = useRef<Broadcaster | null>(null);
@@ -54,7 +26,6 @@ export function LiveDesk({ tracks, onSaved }: { tracks: AdminTrack[] | null; onS
   const [liveStream, setLiveStream] = useState<MediaStream | null>(null);
   const [clock, setClock] = useState(0);
   const [save, setSave] = useState<SaveState>({ kind: "none" });
-  const level = useLevel(liveStream ?? preview);
 
   const onAir = state.phase === "on-air";
   const busy = state.phase === "mic" || state.phase === "connecting" || state.phase === "stopping";
@@ -229,12 +200,9 @@ export function LiveDesk({ tracks, onSaved }: { tracks: AdminTrack[] | null; onS
         ) : null}
 
         <div className={s.liveField}>
-          <span className={s.label}>LEVEL</span>
+          <span className={s.label}>MICROPHONE</span>
+          <MicScope stream={liveStream ?? preview} />
           <div className={s.row}>
-            <span className={s.meter} aria-hidden="true">
-              <span className={s.meterFill} style={{ width: `${Math.round(level * 100)}%` }} />
-            </span>
-            <span className={s.note}>{liveStream || preview ? (level > 0.15 ? "Mic OK" : "No sound") : "—"}</span>
             {!onAir && !busy ? (
               <button type="button" className={s.btn} onClick={() => void testMic()}>
                 {preview ? "STOP TEST" : "TEST MIC"}

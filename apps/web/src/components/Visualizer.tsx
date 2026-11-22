@@ -4,7 +4,8 @@ import { useEffect, useRef } from "react";
 import { getAudioGraph, useAudio, useVizMode } from "@/lib/radio-client";
 import { useTheme } from "@/lib/theme";
 import { createSilentFrame } from "@/lib/viz/analysis";
-import { createVizMemory, draw, recordFrame, VIZ_MODES, type Palette, type VizMode } from "@/lib/viz/draw";
+import { createVizMemory, draw, recordFrame, VIZ_MODES, type VizMode } from "@/lib/viz/draw";
+import { readPalette } from "@/lib/viz/palette";
 import s from "./console.module.css";
 
 const CAPTIONS: Record<VizMode, string> = {
@@ -15,19 +16,6 @@ const CAPTIONS: Record<VizMode, string> = {
   spectrum:
     "Detail C · 32 log bands, 31 Hz to 16 kHz, 0 to −90 dBFS (sine-calibrated). FFT 4096, Blackman window. Orange caps: peak hold, falling 20 dB/s.",
 };
-
-function readPalette(el: HTMLElement): Palette {
-  const cs = getComputedStyle(el);
-  const v = (name: string, fallback: string) => cs.getPropertyValue(name).trim() || fallback;
-  return {
-    ink: v("--ink", "#15181a"),
-    ink2: v("--ink-2", "#4b5156"),
-    dim: v("--dim", "rgba(21,24,26,.28)"),
-    hot: v("--hot", "#f0561e"),
-    paper: v("--paper", "#e6e8e5"),
-    font: cs.fontFamily || "monospace",
-  };
-}
 
 /** The drawing's main "part": a live analyser of the stream with three views. */
 export function Visualizer() {
