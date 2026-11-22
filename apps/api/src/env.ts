@@ -21,6 +21,11 @@ const schema = z.object({
     .string()
     .default("/media")
     .transform((p) => path.resolve(p)),
+  /** Liquidsoap's live input, fed by the browser "Go live" button (through ffmpeg). Empty password = locked. */
+  LIVE_HOST: z.string().default("liquidsoap"),
+  LIVE_PORT: z.coerce.number().int().positive().default(8005),
+  LIVE_MOUNT: z.string().default("live-in"),
+  LIVE_PASSWORD: z.string().default(""),
   MAX_UPLOAD_MB: z.coerce.number().int().min(1).max(2000).default(300),
   FFPROBE_PATH: z.string().default("ffprobe"),
   ADMIN_PASSWORD: z.string().min(12, "ADMIN_PASSWORD must be at least 12 characters"),

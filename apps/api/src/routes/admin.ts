@@ -11,6 +11,7 @@ import { issueToken, LoginLimiter, safeEqual, verifyToken } from "../auth.js";
 import { playlists, playlistTracks, tracks } from "../db/schema.js";
 import { isMp3, MediaError, placeInMusicDir, probe, processBackground, safeJoin, slugFilename, titleFromFilename, uniqueFilename } from "../media.js";
 import { getAppearance, MAX_TEXT_LENGTH, setBackground, setText } from "../services/appearance.js";
+import { BroadcastBusyError, type BroadcastSession } from "../services/broadcast.js";
 
 export interface AdminOptions {
   password: string;
@@ -63,7 +64,8 @@ export const adminRoutes: FastifyPluginAsync<AdminOptions> = async (app, opts) =
   });
 
   app.addHook("onRequest", async (req, reply) => {
-    if (req.routeOptions.url === "/admin/login") return;
+    // The live WebSocket can't carry an Authorization header; it checks the token in its first message.
+    if (req.routeOptions.url === "/admin/login" || req.routeOptions.url === "/admin/live") return;
     const header = req.headers.authorization ?? "";
     const token = header.startsWith("Bearer ") ? header.slice(7) : null;
     if (!verifyToken(token, opts.sessionSecret, opts.password)) {
@@ -347,4 +349,81 @@ export const adminRoutes: FastifyPluginAsync<AdminOptions> = async (app, opts) =
   });
 
   app.delete("/appearance/background", async () => setBackground(app.db, opts.mediaDir, null));
+
+  // ---- go live from the browser ----
+  const liveStart = z.object({ type: z.literal("start"), token: z.string(), title: z.string().trim().max(200).nullable().optional() });
+
+  app.get("/live", { websocket: true }, (socket) => {
+    let session: BroadcastSession | null = null;
+    let stopping = false;
+    const fail = (code: number, message: string) => {
+      if (socket.readyState !== socket.OPEN) return;
+      try {
+        socket.send(JSON.stringify({ type: "error", message }));
+        socket.close(code); // the message travels in the frame above; close reasons are capped at 123 bytes
+      } catch (err) {
+        app.log.warn({ err }, "browser live: could not close the socket cleanly");
+        socket.terminate();
+      }
+    };
+    const authTimer = setTimeout(() => fail(4401, "Not signed in."), 5000);
+
+    socket.on("message", (data: Buffer, isBinary: boolean) => {
+      if (session) {
+        if (isBinary) return session.write(data);
+        let msg: { type?: unknown } = {};
+        try {
+          msg = JSON.parse(String(data));
+        } catch {
+          // ignore anything that isn't JSON
+        }
+        if (msg.type === "stop") {
+          stopping = true;
+          session.stop();
+        }
+        return;
+      }
+      if (stopping) return;
+      clearTimeout(authTimer);
+      let start: z.infer<typeof liveStart> | null = null;
+      try {
+        start = isBinary ? null : liveStart.parse(JSON.parse(String(data)));
+      } catch {
+        start = null;
+      }
+      if (!start || !verifyToken(start.token, opts.sessionSecret, opts.password)) {
+        return fail(4401, "Not signed in, or your session expired.");
+      }
+      if (!app.broadcast.enabled) return fail(4503, "Going live isn't set up on the server (LIVE_PASSWORD is empty).");
+      try {
+        session = app.broadcast.start(start.title || null);
+      } catch (err) {
+        if (err instanceof BroadcastBusyError) return fail(4409, "Someone is already live.");
+        app.log.error({ err }, "browser live: could not start ffmpeg");
+        return fail(1011, "The server couldn't start the live stream. Try again in a moment.");
+      }
+      session.onIdle(() => {
+        stopping = true;
+        fail(4408, "No audio from the browser for 5 seconds, so the show was ended. What was recorded is being saved.");
+      });
+      session.onExit((code, stderr) => {
+        session = null;
+        if (stopping) {
+          if (socket.readyState === socket.OPEN) socket.close(1000, "show ended");
+          return;
+        }
+        const reason = stderr.split("\n").filter(Boolean).at(-1)?.slice(0, 300) ?? `ffmpeg exited (${code})`;
+        app.log.warn({ code, stderr }, "browser live: stream to the station failed");
+        fail(1011, `The station stopped taking audio: ${reason}`);
+      });
+      socket.send(JSON.stringify({ type: "on-air" }));
+    });
+
+    socket.on("close", () => {
+      clearTimeout(authTimer);
+      // Tab closed, laptop asleep or network gone: end the show so the recording is saved.
+      stopping = true;
+      session?.stop();
+    });
+  });
 };

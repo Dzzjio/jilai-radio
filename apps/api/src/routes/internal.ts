@@ -56,10 +56,12 @@ export const internalRoutes: FastifyPluginAsync<{ secret: string; musicDir: stri
     const parsed = liveBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: "invalid body" });
     if (parsed.data.live) {
-      app.live.startLive(parsed.data.title);
+      // A show from the admin's browser carries its title; BUTT-style sources send it as metadata.
+      const title = parsed.data.title?.trim() || app.broadcast.currentTitle;
+      app.live.startLive(title);
       app.radio.setNowPlaying({
         trackId: null,
-        title: parsed.data.title?.trim() || "Live show",
+        title: title || "Live show",
         artist: null,
         album: null,
         startedAt: new Date().toISOString(),

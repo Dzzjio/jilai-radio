@@ -6,6 +6,7 @@ import type { WebSocket } from "ws";
 import { buildApp } from "../src/app.js";
 import { createDb } from "../src/db/client.js";
 import { loadEnv } from "../src/env.js";
+import type { LiveBroadcast } from "../src/services/broadcast.js";
 import { RadioState } from "../src/state.js";
 import { testDatabaseUrl } from "./db-url.js";
 
@@ -27,12 +28,14 @@ export function testEnv(overrides: { MUSIC_DIR?: string; RECORDINGS_DIR?: string
 }
 
 /** Truncates every table, then builds a fresh app (fresh in-memory state). */
-export async function setupTestApp(overrides: { MUSIC_DIR?: string; RECORDINGS_DIR?: string; MEDIA_DIR?: string } = {}) {
+export async function setupTestApp(
+  overrides: { MUSIC_DIR?: string; RECORDINGS_DIR?: string; MEDIA_DIR?: string; broadcast?: LiveBroadcast } = {},
+) {
   const env = testEnv(overrides);
   const { db, sql } = createDb(env.DATABASE_URL);
   await db.execute(dsql`truncate play_history, playlist_tracks, schedule, playlists, tracks, site_appearance restart identity cascade`);
   const radio = new RadioState();
-  const app = await buildApp({ env, db, radio, logger: false });
+  const app = await buildApp({ env, db, radio, broadcast: overrides.broadcast, logger: false });
   await app.ready();
 
   return {

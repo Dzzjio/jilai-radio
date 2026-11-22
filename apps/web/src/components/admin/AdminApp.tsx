@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { type DragEvent, type FormEvent, useCallback, useEffect, useState } from "react";
-import { AdminError, type AdminPlaylist, type AdminTrack, adminApi, formatDuration, formatSize, tokenStore } from "@/lib/admin-api";
+import { AdminError, type AdminTrack, adminApi, formatDuration, formatSize, tokenStore } from "@/lib/admin-api";
 import { config } from "@/lib/config";
 import type { Appearance } from "@/lib/types";
 import { ThemeToggle } from "../ThemeToggle";
 import s from "./admin.module.css";
+import { LiveDesk } from "./LiveDesk";
 
 type Auth = "checking" | "signed-out" | "signed-in";
 
@@ -139,11 +140,10 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
 
   return (
     <>
+      <LiveDesk tracks={tracks} onSaved={() => void reload()} />
       <Look onError={fail} />
-      <GoingLive tracks={tracks} />
       <Upload onUploaded={reload} onError={fail} />
       <Tracks tracks={tracks} reload={reload} onError={fail} />
-      <Playlists tracks={tracks ?? []} onError={fail} />
       {error ? (
         <p className={`${s.status} ${s.err}`} role="alert">
           {error}
@@ -298,49 +298,6 @@ function Look({ onError }: { onError: (err: unknown) => void }) {
           {upload.state === "processing" ? "Processing on the server… this can take a minute for longer videos." : upload.detail}
         </p>
       </div>
-    </section>
-  );
-}
-
-/* ---------------- going live ---------------- */
-function GoingLive({ tracks }: { tracks: AdminTrack[] | null }) {
-  const host = (() => {
-    try {
-      return new URL(config.apiUrl).hostname;
-    } catch {
-      return "your API domain";
-    }
-  })();
-  const repeating = tracks?.find((t) => t.onRepeat);
-  const rows: [string, string][] = [
-    ["Server", host],
-    ["Port", "8005"],
-    ["Mount", "live-in"],
-    ["User", "source"],
-    ["Password", "LIVE_PASSWORD in the server's infra/.env"],
-    ["Format", "MP3 320 kbps (or AAC), stereo, 44.1 kHz"],
-  ];
-  return (
-    <section className={s.section} aria-labelledby="live-h">
-      <h2 id="live-h" className={s.h2}>
-        <span className={s.balloon} aria-hidden="true">0</span>GOING LIVE
-      </h2>
-      <p className={s.note}>
-        In BUTT (or Mixxx / OBS) add an Icecast server with these settings and press play. The station switches to the live show
-        within a few seconds. When the show ends, its recording appears below and plays on repeat. Turn on “update song name” so
-        the show title reaches the website.
-      </p>
-      <dl className={s.liveGrid}>
-        {rows.map(([k, v]) => (
-          <div key={k}>
-            <dt className={s.label}>{k.toUpperCase()}</dt>
-            <dd>{v}</dd>
-          </div>
-        ))}
-      </dl>
-      <p className={s.note}>
-        On repeat now: <strong>{repeating ? repeating.title : "nothing (the library plays on shuffle)"}</strong>
-      </p>
     </section>
   );
 }
@@ -609,237 +566,6 @@ function Tracks({ tracks, reload, onError }: { tracks: AdminTrack[] | null; relo
             )}
           </tbody>
         </table>
-      </div>
-      <p className={s.status} role="status">
-        {status}
-      </p>
-    </section>
-  );
-}
-
-/* ---------------- ③ playlists ---------------- */
-function Playlists({ tracks, onError }: { tracks: AdminTrack[]; onError: (err: unknown) => void }) {
-  const [lists, setLists] = useState<AdminPlaylist[] | null>(null);
-  const [selected, setSelected] = useState<number | null>(null);
-  const [items, setItems] = useState<AdminTrack[]>([]);
-  const [newName, setNewName] = useState("");
-  const [rename, setRename] = useState("");
-  const [addId, setAddId] = useState("");
-  const [dirty, setDirty] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [status, setStatus] = useState("");
-
-  const loadLists = useCallback(async () => {
-    try {
-      setLists(await adminApi.playlists());
-    } catch (err) {
-      onError(err);
-    }
-  }, [onError]);
-
-  useEffect(() => {
-    let alive = true;
-    adminApi.playlists().then((found) => alive && setLists(found), onError);
-    return () => {
-      alive = false;
-    };
-  }, [onError]);
-
-  async function open(id: number) {
-    try {
-      const pl = await adminApi.playlist(id);
-      setSelected(id);
-      setItems(pl.tracks);
-      setRename(pl.name);
-      setDirty(false);
-      setConfirmDelete(false);
-      setStatus("");
-    } catch (err) {
-      onError(err);
-    }
-  }
-
-  async function create(e: FormEvent) {
-    e.preventDefault();
-    try {
-      const pl = await adminApi.createPlaylist(newName.trim());
-      setNewName("");
-      await loadLists();
-      await open(pl.id);
-    } catch (err) {
-      if (err instanceof AdminError && err.status === 409) setStatus(err.message);
-      else onError(err);
-    }
-  }
-
-  async function saveTracks() {
-    if (selected === null) return;
-    try {
-      await adminApi.setPlaylistTracks(selected, items.map((t) => t.id));
-      if (rename.trim()) await adminApi.renamePlaylist(selected, rename.trim());
-      setDirty(false);
-      setStatus("Playlist saved.");
-      await loadLists();
-    } catch (err) {
-      if (err instanceof AdminError && err.status === 409) setStatus(err.message);
-      else onError(err);
-    }
-  }
-
-  async function removePlaylist() {
-    if (selected === null) return;
-    try {
-      await adminApi.deletePlaylist(selected);
-      setSelected(null);
-      setItems([]);
-      setStatus("Playlist deleted.");
-      await loadLists();
-    } catch (err) {
-      onError(err);
-    }
-  }
-
-  const move = (i: number, d: -1 | 1) => {
-    const next = [...items];
-    const [it] = next.splice(i, 1);
-    next.splice(i + d, 0, it!);
-    setItems(next);
-    setDirty(true);
-  };
-
-  const available = tracks.filter((t) => !items.some((i) => i.id === t.id));
-  const current = lists?.find((l) => l.id === selected);
-
-  return (
-    <section className={s.section} aria-labelledby="pl-h">
-      <h2 id="pl-h" className={s.h2}>
-        <span className={s.balloon} aria-hidden="true">3</span>PLAYLISTS
-      </h2>
-      <p className={s.note}>
-        Playlists are saved for scheduling later. For now the station plays every track in the library on shuffle.
-      </p>
-      <div className={s.plGrid}>
-        <div className={s.section}>
-          <form className={s.row} onSubmit={create}>
-            <label htmlFor="pl-new" className="sr-only">
-              New playlist name
-            </label>
-            <input id="pl-new" className={`${s.input} ${s.grow}`} placeholder="New playlist name" value={newName} onChange={(e) => setNewName(e.currentTarget.value)} />
-            <button type="submit" className={s.btnSolid} disabled={!newName.trim()}>
-              CREATE
-            </button>
-          </form>
-          <ul className={s.plList}>
-            {lists === null ? <li className={s.note} style={{ padding: 12 }}>Loading…</li> : null}
-            {lists?.length === 0 ? <li className={s.note} style={{ padding: 12 }}>No playlists yet.</li> : null}
-            {lists?.map((l) => (
-              <li key={l.id}>
-                <button type="button" className={s.plItem} aria-current={l.id === selected} onClick={() => void open(l.id)}>
-                  <span className={s.truncate}>{l.name}</span>
-                  <span>{l.trackCount ?? 0}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        {selected !== null && current ? (
-          <div className={s.plEditor}>
-            <div className={s.row}>
-              <label htmlFor="pl-rename" className={s.label}>
-                NAME
-              </label>
-              <input
-                id="pl-rename"
-                className={`${s.input} ${s.grow}`}
-                value={rename}
-                onChange={(e) => {
-                  setRename(e.currentTarget.value);
-                  setDirty(true);
-                }}
-              />
-            </div>
-            <ol className={s.plTracks}>
-              {items.length === 0 ? <li className={s.note}>Empty. Add tracks below.</li> : null}
-              {items.map((t, i) => (
-                <li key={t.id} className={s.plTrack}>
-                  <span>{String(i + 1).padStart(2, "0")}</span>
-                  <span className={s.truncate}>
-                    {t.title} <span className={s.ok}>· {t.artist ?? "—"} · {formatDuration(t.durationSec)}</span>
-                  </span>
-                  <span className={s.actions}>
-                    <button type="button" className={`${s.btn} ${s.small}`} disabled={i === 0} onClick={() => move(i, -1)} aria-label={`Move ${t.title} up`}>
-                      ↑
-                    </button>
-                    <button type="button" className={`${s.btn} ${s.small}`} disabled={i === items.length - 1} onClick={() => move(i, 1)} aria-label={`Move ${t.title} down`}>
-                      ↓
-                    </button>
-                    <button
-                      type="button"
-                      className={`${s.btn} ${s.small}`}
-                      onClick={() => {
-                        setItems(items.filter((x) => x.id !== t.id));
-                        setDirty(true);
-                      }}
-                      aria-label={`Remove ${t.title} from the playlist`}
-                    >
-                      REMOVE
-                    </button>
-                  </span>
-                </li>
-              ))}
-            </ol>
-            <div className={s.row}>
-              <label htmlFor="pl-add" className="sr-only">
-                Track to add
-              </label>
-              <select id="pl-add" className={`${s.input} ${s.grow}`} value={addId} onChange={(e) => setAddId(e.currentTarget.value)}>
-                <option value="">Add a track…</option>
-                {available.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.title} · {t.artist ?? "—"} ({formatDuration(t.durationSec)})
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                className={s.btn}
-                disabled={!addId}
-                onClick={() => {
-                  const t = tracks.find((x) => String(x.id) === addId);
-                  if (t) {
-                    setItems([...items, t]);
-                    setDirty(true);
-                  }
-                  setAddId("");
-                }}
-              >
-                ADD
-              </button>
-            </div>
-            <div className={s.row} style={{ justifyContent: "space-between" }}>
-              <button type="button" className={s.btnSolid} disabled={!dirty} onClick={() => void saveTracks()}>
-                SAVE PLAYLIST
-              </button>
-              {confirmDelete ? (
-                <span className={s.actions}>
-                  <button type="button" className={s.btnDanger} onClick={() => void removePlaylist()}>
-                    DELETE PLAYLIST
-                  </button>
-                  <button type="button" className={s.btn} onClick={() => setConfirmDelete(false)}>
-                    KEEP
-                  </button>
-                </span>
-              ) : (
-                <button type="button" className={s.btn} onClick={() => setConfirmDelete(true)}>
-                  DELETE
-                </button>
-              )}
-            </div>
-          </div>
-        ) : (
-          <p className={s.note}>Pick a playlist to edit it.</p>
-        )}
       </div>
       <p className={s.status} role="status">
         {status}

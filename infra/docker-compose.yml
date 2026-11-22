@@ -66,13 +66,14 @@ services:
       CROSSFADE_SECONDS: ${CROSSFADE_SECONDS:-5.}
       # Running as uid 1000 has no home dir; give Liquidsoap a writable one for its script cache.
       HOME: /tmp
-      # Live input for the DJ's streaming app (BUTT etc.)
+      # Live input: fed by the API when the admin presses GO LIVE (any Icecast source client works too)
       LIVE_PASSWORD: ${LIVE_PASSWORD:-}
       LIVE_PORT: "8005"
       LIVE_MOUNT: live-in
       RECORDINGS_DIR: /recordings
     ports:
-      # Local dev: localhost only. Production: LIVE_BIND=0.0.0.0 so the DJ can connect (open 8005 in the firewall).
+      # Localhost only. The admin's "Go live" reaches it through the API on the Docker network,
+      # so this port never needs to be open to the internet.
       - "${LIVE_BIND:-127.0.0.1}:${LIVE_PORT:-8005}:8005"
     volumes:
       - ./liquidsoap:/radio:ro
@@ -111,6 +112,11 @@ services:
       RECORDINGS_DIR: /recordings
       LIQUIDSOAP_RECORDINGS_DIR: /recordings
       MEDIA_DIR: /media
+      # "Go live" in admin: the API streams the browser's mic into Liquidsoap's live input.
+      LIVE_HOST: liquidsoap
+      LIVE_PORT: "8005"
+      LIVE_MOUNT: live-in
+      LIVE_PASSWORD: ${LIVE_PASSWORD:-}
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-300}
       CORS_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
       # The API refuses to start if these are missing or too short.

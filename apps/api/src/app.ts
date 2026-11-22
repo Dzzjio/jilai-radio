@@ -8,6 +8,7 @@ import type { Env } from "./env.js";
 import { adminRoutes } from "./routes/admin.js";
 import { internalRoutes } from "./routes/internal.js";
 import { publicRoutes } from "./routes/public.js";
+import { LiveBroadcast } from "./services/broadcast.js";
 import { LiveService } from "./services/live.js";
 import { RadioState } from "./state.js";
 import { wsRoutes } from "./ws.js";
@@ -17,6 +18,7 @@ declare module "fastify" {
     db: Db;
     radio: RadioState;
     live: LiveService;
+    broadcast: LiveBroadcast;
   }
 }
 
@@ -24,10 +26,12 @@ export interface AppDeps {
   env: Env;
   db: Db;
   radio?: RadioState;
+  /** Tests pass one with a fake ffmpeg. */
+  broadcast?: LiveBroadcast;
   logger?: FastifyServerOptions["logger"];
 }
 
-export async function buildApp({ env, db, radio = new RadioState(), logger }: AppDeps) {
+export async function buildApp({ env, db, radio = new RadioState(), broadcast, logger }: AppDeps) {
   const app = Fastify({
     logger: logger ?? { level: env.LOG_LEVEL },
     // Behind Caddy in production: trust X-Forwarded-* from the proxy.
@@ -49,8 +53,18 @@ export async function buildApp({ env, db, radio = new RadioState(), logger }: Ap
     }),
   );
 
+  app.decorate(
+    "broadcast",
+    broadcast ??
+      new LiveBroadcast({
+        target: { host: env.LIVE_HOST, port: env.LIVE_PORT, mount: env.LIVE_MOUNT, password: env.LIVE_PASSWORD },
+        log: app.log,
+      }),
+  );
+
   await app.register(cors, { origin: env.CORS_ORIGIN, methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"] });
-  await app.register(websocket, { options: { maxPayload: 1024 } });
+  // 256 KiB: the admin's live audio arrives in ~250 ms chunks. The public /ws drops anyone sending more than 1 KiB.
+  await app.register(websocket, { options: { maxPayload: 256 * 1024 } });
 
   // Admin-uploaded site background. Filenames are unique per upload, so cache them forever.
   await mkdir(env.MEDIA_DIR, { recursive: true });

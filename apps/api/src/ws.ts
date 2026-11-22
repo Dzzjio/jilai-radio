@@ -74,8 +74,11 @@ export const wsRoutes: FastifyPluginAsync = async (app) => {
     alive.set(socket, true);
     socket.on("pong", () => alive.set(socket, true));
     socket.on("close", () => clients.delete(socket));
-    // Clients have nothing to say; ignore anything they send.
-    socket.on("message", () => {});
+    // Clients have nothing to say; ignore small messages, drop anyone sending big ones.
+    socket.on("message", (data: Buffer | ArrayBuffer | Buffer[]) => {
+      const size = Array.isArray(data) ? data.reduce((n, b) => n + b.length, 0) : data.byteLength;
+      if (size > 1024) socket.terminate();
+    });
 
     const snapshot: ServerMessage = { type: "snapshot", ...current, listeners: app.radio.listeners };
     socket.send(JSON.stringify(snapshot));

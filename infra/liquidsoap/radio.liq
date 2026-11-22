@@ -2,7 +2,8 @@
 # Radio Aha — one 24/7 stream, same for every listener.
 #
 # What plays, in priority order:
-#   live      the DJ, while connected to the live input (BUTT / Mixxx / OBS → port 8005, mount /live-in)
+#   live      the live show, while a source is connected to the live input (port 8005, mount /live-in;
+#             normally the API, streaming the admin's microphone from the browser)
 #   repeat    after a show: its recording, on repeat (the API decides which file)
 #   music     the library folder, shuffled and crossfaded
 #   emergency silence/jingle, so the stream never drops (plus mksafe)
