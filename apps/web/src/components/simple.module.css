@@ -1,0 +1,122 @@
+/* Radio Aha · simple: a full-screen video with a few things on top. */
+
+.root {
+  position: relative;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: #5f6669; /* fog grey, behind the video while it loads */
+  color: #fff;
+}
+
+/* Large-viewport height so the video still covers the screen when mobile browser bars hide. */
+.bg {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100vh;
+  height: 100lvh;
+  object-fit: cover;
+  object-position: 50% 50%;
+  pointer-events: none;
+}
+
+/* Portrait screens crop the sides: keep the misty hill (right of centre) in view. */
+@media (orientation: portrait) {
+  .bg {
+    object-position: 68% 50%;
+  }
+}
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.12) 70%);
+  pointer-events: none;
+}
+
+.main {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+  padding: max(24px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  text-align: center;
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.45);
+}
+
+.play {
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+  padding: 0;
+  border: 1.5px solid rgba(255, 255, 255, 0.75);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  color: #fff;
+  cursor: pointer;
+  transition:
+    background 0.2s,
+    transform 0.2s;
+}
+
+.play:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.play:active {
+  transform: scale(0.96);
+}
+
+.play:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 5px;
+}
+
+.play[data-loading] {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.text {
+  max-width: 34ch;
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.error {
+  max-width: 34ch;
+  margin: -12px 0 0;
+  font-size: 13px;
+}
+
+.listeners {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 14px;
+  letter-spacing: 0.04em;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ff6a33;
+  box-shadow: 0 0 8px rgba(255, 106, 51, 0.8);
+}
