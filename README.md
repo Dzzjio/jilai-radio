@@ -1,6 +1,6 @@
 # Radio Aha
 
-A 24/7 internet radio station. Everyone hears the same song at the same moment, like a real radio.
+A 24/7 internet radio station. Everyone hears the same song at the same moment.
 
 ## Architecture
 
