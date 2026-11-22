@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createSilentFrame } from "./analysis";
-import { createVizMemory, recordFrame, STRIP_WINDOW_MS } from "./draw";
+import { createVizMemory, draw, polarGeometry, recordFrame, STRIP_WINDOW_MS } from "./draw";
 
 function run(fps: number, seconds: number) {
   const mem = createVizMemory();
@@ -27,5 +27,46 @@ describe("strip chart history", () => {
     const [, rmsDb, peakDb] = mem.history.at(-1)!;
     expect(rmsDb).toBeCloseTo(-6.02, 1);
     expect(peakDb).toBeCloseTo(-6.02, 1);
+  });
+});
+
+describe("polar geometry", () => {
+  it("default layout is unchanged (the home page visualizer)", () => {
+    const g = polarGeometry(400, 400);
+    expect(g.R).toBe(178);
+    expect(g.r0).toBeCloseTo(178 * 0.38);
+    expect(g.span).toBeCloseTo(178 * 0.5);
+  });
+
+  it("button variant: a clear centre hole inside the waveform, rings still inside the frame", () => {
+    const g = polarGeometry(340, 340, { inner: 0.5, span: 0.42 });
+    // the loudest waveform swing never reaches into the hole
+    expect(g.hole).toBeLessThanOrEqual(g.r0 - 12 - g.R * 0.09);
+    expect(g.hole).toBeGreaterThan(40); // room for a ~90 px button
+    expect(g.r0 + g.span + 4).toBeLessThanOrEqual(g.R);
+  });
+});
+
+const noop = () => {};
+function fakeCtx() {
+  const texts: string[] = [];
+  const ctx = new Proxy(
+    { texts, fillText: (t: string) => texts.push(t), setLineDash: noop, beginPath: noop, arc: noop, stroke: noop, moveTo: noop, lineTo: noop },
+    { get: (o, k) => (k in o ? o[k as keyof typeof o] : noop), set: () => true },
+  );
+  return ctx as unknown as CanvasRenderingContext2D & { texts: string[] };
+}
+
+describe("drawPolar", () => {
+  const pal = { ink: "#000", ink2: "#333", dim: "#999", hot: "#f50", paper: "#fff", font: "monospace" };
+
+  it("button variant leaves the centre free (no level readout)", () => {
+    const x = fakeCtx();
+    draw("polar", { x, w: 340, h: 340, live: true, frame: createSilentFrame(), mem: createVizMemory(), pal, now: 0, polar: { inner: 0.5, span: 0.42, hideLevel: true, hideLabels: true } });
+    expect(x.texts).toEqual([]); // no readout, no "40 Hz" / "16 kHz"
+    const y = fakeCtx();
+    draw("polar", { x: y, w: 340, h: 340, live: true, frame: createSilentFrame(), mem: createVizMemory(), pal, now: 0 });
+    expect(y.texts).toContain("dBFS RMS");
+    expect(y.texts).toContain("40 Hz");
   });
 });

@@ -6,7 +6,7 @@ import { config } from "@/lib/config";
 import { type MicTestDeps, startMicTest } from "@/lib/mic-test";
 import { afterShow, type BroadcastState, type Broadcaster, type BroadcasterDeps, createBroadcaster, formatOnAir } from "@/lib/live-broadcast";
 import s from "./admin.module.css";
-import { MicScope } from "./MicScope";
+import { type LivePhase, LiveButton } from "./LiveButton";
 
 const SAVE_POLL_MS = 2000;
 const SAVE_WAIT_MS = 40_000;
@@ -151,67 +151,56 @@ export function LiveDesk({ tracks, onSaved }: { tracks: AdminTrack[] | null; onS
     void refreshDevices();
   }
 
-  const buttonLabel =
-    state.phase === "mic"
-      ? "OPENING MIC…"
-      : state.phase === "connecting"
-        ? "CONNECTING…"
-        : state.phase === "stopping"
-          ? "ENDING…"
-          : onAir
-            ? `● ON AIR ${formatOnAir(clock - (state.startedAt ?? clock))} · STOP`
-            : "GO LIVE";
+  const livePhase: LivePhase =
+    state.phase === "mic" || state.phase === "connecting" ? "connecting" : state.phase === "stopping" ? "stopping" : onAir ? "live" : "idle";
 
   return (
     <section className={s.section} aria-labelledby="live-h">
       <h2 id="live-h" className={s.h2}>
         LIVE
       </h2>
-      <p className={s.note}>
-        Go live with this computer's microphone (or a mixer plugged into it). When you stop, the show is saved and plays on
-        repeat. Use headphones, and don't play the station on this computer while you're live.
-      </p>
+      <div className={s.liveTop}>
+        <p className={s.note}>
+          Go live with this computer's microphone (or a mixer plugged into it). When you stop, the show is saved and plays on
+          repeat. Use headphones, and don't play the station on this computer while you're live.
+        </p>
 
-      <div className={s.liveDesk}>
-        <label className={s.liveField}>
-          <span className={s.label}>SHOW TITLE (OPTIONAL)</span>
-          <input
-            className={s.input}
-            value={title}
-            maxLength={120}
-            disabled={onAir || busy}
-            placeholder="e.g. Sunday Morning"
-            onChange={(e) => setTitle(e.currentTarget.value)}
-          />
-        </label>
-
-        {devices.length > 1 ? (
+        <div className={s.liveDesk}>
           <label className={s.liveField}>
-            <span className={s.label}>MICROPHONE</span>
-            <select className={s.input} value={deviceId} disabled={onAir || busy} onChange={(e) => setDeviceId(e.currentTarget.value)}>
-              <option value="">System default</option>
-              {devices.map((d) => (
-                <option key={d.deviceId} value={d.deviceId}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
+            <span className={s.label}>SHOW TITLE (OPTIONAL)</span>
+            <input
+              className={`${s.input} ${s.inputSm}`}
+              value={title}
+              maxLength={120}
+              disabled={onAir || busy}
+              placeholder="e.g. Sunday Morning"
+              onChange={(e) => setTitle(e.currentTarget.value)}
+            />
           </label>
-        ) : null}
 
-        <div className={s.liveField}>
-          <span className={s.label}>MICROPHONE</span>
-          <MicScope stream={liveStream ?? preview} />
-          <div className={s.row}>
-            {!onAir && !busy ? (
-              <button type="button" className={s.btn} onClick={() => void testMic()}>
-                {preview ? "STOP TEST" : "TEST MIC"}
-              </button>
-            ) : null}
+          {devices.length > 1 ? (
+            <label className={s.liveField}>
+              <span className={s.label}>MICROPHONE</span>
+              <select className={`${s.input} ${s.inputSm}`} value={deviceId} disabled={onAir || busy} onChange={(e) => setDeviceId(e.currentTarget.value)}>
+                <option value="">System default</option>
+                {devices.map((d) => (
+                  <option key={d.deviceId} value={d.deviceId}>
+                    {d.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+
+          <div className={s.liveField}>
+            <span className={s.label}>MIC TEST</span>
+            <button type="button" className={`${s.btn} ${s.btnSm}`} disabled={onAir || busy} onClick={() => void testMic()}>
+              {preview ? "STOP TEST" : "TEST MIC"}
+            </button>
           </div>
-          <span className={s.note}>{preview ? "Recording a test… say something, then press STOP TEST to hear it." : ""}</span>
         </div>
       </div>
+      {preview ? <p className={s.note}>Recording a test… say something, then press STOP TEST to hear it.</p> : null}
 
       {testUrl && !onAir ? (
         <div className={s.liveField}>
@@ -220,15 +209,13 @@ export function LiveDesk({ tracks, onSaved }: { tracks: AdminTrack[] | null; onS
         </div>
       ) : null}
 
-      <button
-        type="button"
-        className={`${s.goLive} ${onAir ? s.goLiveOn : ""}`}
-        disabled={busy}
-        aria-pressed={onAir}
-        onClick={() => (onAir ? broadcaster.current?.stop() : void goLive())}
-      >
-        {buttonLabel}
-      </button>
+      <LiveButton
+        stream={liveStream ?? preview}
+        phase={livePhase}
+        timer={`ON AIR ${formatOnAir(clock - (state.startedAt ?? clock))}`}
+        onStart={() => void goLive()}
+        onStop={() => broadcaster.current?.stop()}
+      />
 
       <p className={save.kind === "none" && state.phase === "error" ? s.err : s.ok} role="status" aria-live="polite">
         {save.kind === "saving"

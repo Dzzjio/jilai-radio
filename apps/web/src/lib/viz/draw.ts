@@ -62,6 +62,28 @@ export interface DrawArgs {
   pal: Palette;
   /** performance.now() of this frame. */
   now: number;
+  /** Polar view tweaks (the admin's Go Live button sits in the middle of the ring). */
+  polar?: PolarOptions;
+}
+
+export interface PolarOptions {
+  /** Inner circle radius as a fraction of the outer radius (default 0.38). */
+  inner?: number;
+  /** Length of the spectrum spokes as a fraction of the outer radius (default 0.5). */
+  span?: number;
+  /** Leave the centre empty instead of drawing the dBFS readout. */
+  hideLevel?: boolean;
+  /** Leave out the "40 Hz" / "16 kHz" labels. */
+  hideLabels?: boolean;
+}
+
+/** Radii of the polar view; `hole` is the clear centre the waveform never reaches into. */
+export function polarGeometry(w: number, h: number, opts: PolarOptions = {}) {
+  const R = Math.min(w, h) / 2 - 22;
+  const r0 = R * (opts.inner ?? 0.38);
+  const span = R * (opts.span ?? 0.5);
+  const hole = r0 - 12 - R * 0.09 - 2;
+  return { R, r0, span, hole };
 }
 
 function hatch(x: CanvasRenderingContext2D, mem: VizMemory, color: string): CanvasPattern | string {
@@ -100,10 +122,10 @@ export function draw(mode: VizMode, args: DrawArgs) {
 }
 
 /* ---------------- A · Polar dial ---------------- */
-function drawPolar({ x, w, h, live, frame, pal }: DrawArgs) {
+function drawPolar({ x, w, h, live, frame, pal, polar }: DrawArgs) {
   const cx = w / 2;
   const cy = h / 2;
-  const R = Math.min(w, h) / 2 - 22;
+  const { R, r0, span } = polarGeometry(w, h, polar);
   if (R < 40) return;
 
   x.strokeStyle = pal.ink;
@@ -130,16 +152,16 @@ function drawPolar({ x, w, h, live, frame, pal }: DrawArgs) {
   x.stroke();
   x.setLineDash([]);
 
-  x.fillStyle = pal.ink2;
-  x.font = `11px ${pal.font}`;
-  x.textAlign = "center";
-  x.textBaseline = "bottom";
-  x.fillText("40 Hz", cx, cy - R - 4);
-  x.textBaseline = "top";
-  x.fillText("16 kHz", cx, cy + R + 4);
+  if (!polar?.hideLabels) {
+    x.fillStyle = pal.ink2;
+    x.font = `11px ${pal.font}`;
+    x.textAlign = "center";
+    x.textBaseline = "bottom";
+    x.fillText("40 Hz", cx, cy - R - 4);
+    x.textBaseline = "top";
+    x.fillText("16 kHz", cx, cy + R + 4);
+  }
 
-  const r0 = R * 0.38;
-  const span = R * 0.5;
   const bands = logBandsDb(frame.fd, frame.sampleRate, 48, 40, 16000);
   x.strokeStyle = pal.dim;
   x.beginPath();
@@ -178,6 +200,7 @@ function drawPolar({ x, w, h, live, frame, pal }: DrawArgs) {
   }
   x.stroke();
 
+  if (polar?.hideLevel) return;
   const db = live ? toDbfs(rms(frame.td)) : null;
   x.fillStyle = pal.ink;
   x.textAlign = "center";
