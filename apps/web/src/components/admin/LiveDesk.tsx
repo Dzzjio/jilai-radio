@@ -71,6 +71,11 @@ export function LiveDesk({ tracks, onSaved }: { tracks: AdminTrack[] | null; onS
   );
 
   useEffect(() => {
+    // Mics already connected when the page opens (names show if permission was given before).
+    navigator.mediaDevices
+      ?.enumerateDevices()
+      .then((all) => setDevices(all.filter((d) => d.kind === "audioinput" && d.label)))
+      .catch(() => {});
     navigator.mediaDevices?.addEventListener("devicechange", refreshDevices);
     return () => navigator.mediaDevices?.removeEventListener("devicechange", refreshDevices);
   }, [refreshDevices]);
