@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect } from "react";
 import { useAudio, useLive } from "@/lib/radio-client";
 import { site } from "@/lib/site";
+import { useMediaSession } from "@/lib/use-media-session";
 import s from "./console.module.css";
 
 const timeFormat = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
@@ -21,29 +21,7 @@ export function PlayerPanel() {
   const np = live.nowPlaying;
   const active = status === "playing" || status === "loading";
 
-  // Lock screen / headset controls and metadata.
-  useEffect(() => {
-    if (!("mediaSession" in navigator) || !controller) return;
-    navigator.mediaSession.setActionHandler("play", () => controller.play());
-    navigator.mediaSession.setActionHandler("pause", () => controller.pause());
-    navigator.mediaSession.setActionHandler("stop", () => controller.pause());
-    return () => {
-      for (const action of ["play", "pause", "stop"] as const) navigator.mediaSession.setActionHandler(action, null);
-    };
-  }, [controller]);
-
-  useEffect(() => {
-    if (!("mediaSession" in navigator) || typeof MediaMetadata === "undefined") return;
-    navigator.mediaSession.metadata = new MediaMetadata({
-      title: np?.title ?? site.name,
-      artist: np?.artist ?? site.name,
-      album: np?.album ?? site.name,
-    });
-  }, [np?.title, np?.artist, np?.album]);
-
-  useEffect(() => {
-    if ("mediaSession" in navigator) navigator.mediaSession.playbackState = active ? "playing" : "paused";
-  }, [active]);
+  useMediaSession();
 
   const title = np ? np.title : live.loaded ? "Off air" : "Tuning in…";
   const since = np ? timeFormat.format(new Date(np.startedAt)) : null;
