@@ -1,4 +1,4 @@
-# Radio Jil
+# Radio Aha
 
 A 24/7 online radio station: every listener hears the same live stream, like a real radio.
 
@@ -13,7 +13,7 @@ A 24/7 online radio station: every listener hears the same live stream, like a r
 
 | Part | What | Runs on |
 | --- | --- | --- |
-| `apps/web` | Next.js site: the listening console, `/admin` | Vercel |
+| `apps/web` | Next.js site: the listening console, `/jilai` (admin) | Vercel |
 | `apps/api` | Fastify REST + WebSocket API, admin uploads | Oracle VM (Docker) |
 | `infra/` | Icecast, Liquidsoap, Postgres, API, Caddy (Docker Compose) | Oracle VM |
 
@@ -34,7 +34,7 @@ pnpm infra:up                               # Icecast :8000, Liquidsoap, Postgre
 pnpm dev                                    # API :4000 + website :3000
 ```
 
-- Station: <http://localhost:3000> · Admin: <http://localhost:3000/admin> · Raw stream: <http://localhost:8000/live>
+- Station: <http://localhost:3000> · Admin: <http://localhost:3000/jilai> · Raw stream: <http://localhost:8000/live>
 - Stop: `Ctrl+C`, then `pnpm infra:down`.
 - Checks: `pnpm test` (API tests need `pnpm infra:up`), `pnpm lint`, `pnpm typecheck`, `pnpm build`.
 
@@ -48,7 +48,7 @@ pnpm dev                                    # API :4000 + website :3000
 - **The website** is one static page ("C4 · Schematic"). Its visualizer analyses the live stream in the
   browser with Web Audio: Polar / Strip chart / Spectrum, float data, sine-calibrated dBFS. Light and dark
   sheets follow the system setting, with a toggle.
-- **Admin** (`/admin`, one password from `ADMIN_PASSWORD`): upload MP3s (duration and tags via ffprobe),
+- **Admin** (`/jilai`, one password from `ADMIN_PASSWORD`): upload MP3s (duration and tags via ffprobe),
   edit and delete tracks, scan the folder for files copied in by hand, manage playlists. Playlists are stored
   for scheduling later; the station currently plays the whole library.
 - **Live show → repeat:** a DJ connects with BUTT (or Mixxx/OBS) to port 8005 and the station switches to him
@@ -76,7 +76,7 @@ Schema changes: edit `apps/api/src/db/schema.ts`, then `pnpm --filter @radio-jil
 ## 2. Deploy the server (Oracle Cloud, Always Free ARM)
 
 You need: an Oracle Cloud account, a domain, and this repo on GitHub (or another git host).
-Below, `api.example.com` is the server's domain and `example.com` the website's: use yours.
+The website is `radioaha.org` (Vercel); the server (stream, API, admin backend) is `api.radioaha.org` (Oracle VM).
 
 ### 2.1 Create the VM
 
@@ -113,8 +113,8 @@ sudo netfilter-persistent save        # keep the rules after a reboot
 
 ### 2.3 Point the domain at the server
 
-At your domain registrar, add a DNS **A record**: `api.example.com` → the VM's public IP.
-Check with `dig +short api.example.com` (can take a few minutes).
+At your domain registrar, add a DNS **A record**: `api.radioaha.org` → the VM's public IP.
+Check with `dig +short api.radioaha.org` (can take a few minutes).
 
 ### 2.4 Install Docker and start the station
 
@@ -122,7 +122,7 @@ Check with `dig +short api.example.com` (can take a few minutes).
 curl -fsSL https://get.docker.com | sudo sh
 sudo usermod -aG docker $USER && exit        # log out and SSH back in
 
-git clone https://github.com/<you>/radio-jil.git && cd radio-jil/infra
+git clone https://github.com/Dzzjio/jilai-radio.git && cd jilai-radio/infra
 cp .env.example .env
 ```
 
@@ -138,12 +138,12 @@ Set these lines in `infra/.env`:
 
 ```bash
 COMPOSE_PROFILES=prod                         # runs the API and Caddy too
-PUBLIC_HOST=api.example.com                   # Caddy gets the HTTPS certificate for this
-WEB_ORIGIN=https://example.com                # the website (add the *.vercel.app URL too, comma-separated)
+PUBLIC_HOST=api.radioaha.org                   # Caddy gets the HTTPS certificate for this
+WEB_ORIGIN=https://radioaha.org                # the website (add the *.vercel.app URL too, comma-separated)
 LIQUIDSOAP_API_URL=http://api:4000
-STATION_URL=https://example.com
+STATION_URL=https://radioaha.org
 ICECAST_SOURCE_PASSWORD=…  ICECAST_ADMIN_PASSWORD=…  INTERNAL_SECRET=…  POSTGRES_PASSWORD=…   # from above
-ADMIN_PASSWORD=<a long password you will type on /admin>
+ADMIN_PASSWORD=<a long password you will type on /jilai>
 ADMIN_SESSION_SECRET=…                        # from above
 LIVE_PASSWORD=…                               # from above; give it only to the DJ
 LIVE_BIND=0.0.0.0                             # lets the DJ reach port 8005 from the internet
@@ -156,10 +156,10 @@ start everything:
 mkdir -p music recordings && sudo chown -R 1000:1000 music recordings
 docker compose up -d --build                  # first build takes a few minutes on ARM
 docker compose ps                             # all services "running", api "healthy"
-curl https://api.example.com/health           # {"ok":true}
+curl https://api.radioaha.org/health           # {"ok":true}
 ```
 
-Listen to the raw stream at `https://api.example.com/stream`.
+Listen to the raw stream at `https://api.radioaha.org/stream`.
 
 ---
 
@@ -171,13 +171,13 @@ Listen to the raw stream at `https://api.example.com/stream`.
 
    | Name | Value |
    | --- | --- |
-   | `NEXT_PUBLIC_SITE_URL` | `https://example.com` |
-   | `NEXT_PUBLIC_API_URL` | `https://api.example.com` |
-   | `NEXT_PUBLIC_WS_URL` | `wss://api.example.com/ws` |
-   | `NEXT_PUBLIC_STREAM_URL` | `https://api.example.com/stream` |
+   | `NEXT_PUBLIC_SITE_URL` | `https://radioaha.org` |
+   | `NEXT_PUBLIC_API_URL` | `https://api.radioaha.org` |
+   | `NEXT_PUBLIC_WS_URL` | `wss://api.radioaha.org/ws` |
+   | `NEXT_PUBLIC_STREAM_URL` | `https://api.radioaha.org/stream` |
    | `ENABLE_EXPERIMENTAL_COREPACK` | `1` (uses the pnpm version pinned in `package.json`) |
 
-4. Deploy. Then **Settings → Domains** → add `example.com` and follow Vercel's DNS instructions.
+4. Deploy. Then **Settings → Domains** → add `radioaha.org` and follow Vercel's DNS instructions.
 5. Make sure `WEB_ORIGIN` in the server's `infra/.env` lists every address the site is served from
    (custom domain and/or `https://<project>.vercel.app`), then on the server: `docker compose up -d api`.
 
@@ -187,7 +187,7 @@ Listen to the raw stream at `https://api.example.com/stream`.
 
 ## 4. Running it
 
-- **Add music:** `https://example.com/admin` → upload MP3s. They join the rotation within seconds.
+- **Add music:** `https://radioaha.org/jilai` → upload MP3s. They join the rotation within seconds.
   Files copied straight into `infra/music` on the server are picked up too; press **Scan music folder** in
   admin to list them with length and size.
 - **Update the code:** on the server `git pull && docker compose up -d --build`; Vercel redeploys on push.
@@ -201,7 +201,7 @@ In **BUTT** → Settings → Main → Server → **Add**:
 | Field | Value |
 | --- | --- |
 | Type | Icecast |
-| Address | `api.example.com` |
+| Address | `api.radioaha.org` |
 | Port | `8005` |
 | Password | `LIVE_PASSWORD` from the server's `infra/.env` |
 | Icecast mountpoint | `live-in` |

@@ -1,5 +1,5 @@
 #!/usr/bin/liquidsoap
-# Radio Jil — one 24/7 stream, same for every listener.
+# Radio Aha — one 24/7 stream, same for every listener.
 #
 # What plays, in priority order:
 #   live      the DJ, while connected to the live input (BUTT / Mixxx / OBS → port 8005, mount /live-in)
@@ -28,7 +28,7 @@ icecast_host     = env("ICECAST_HOST", "icecast")
 icecast_port     = int_of_string(env("ICECAST_PORT", "8000"))
 icecast_password = env("ICECAST_SOURCE_PASSWORD", "hackme")
 icecast_mount    = env("ICECAST_MOUNT", "live")
-station_name     = env("STATION_NAME", "Radio Jil")
+station_name     = env("STATION_NAME", "Radio Aha")
 station_desc     = env("STATION_DESCRIPTION", "24/7 online radio")
 station_genre    = env("STATION_GENRE", "Various")
 station_url      = env("STATION_URL", "http://localhost:3000")

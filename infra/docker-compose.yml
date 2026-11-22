@@ -1,4 +1,4 @@
-# Radio Jil infrastructure. Every image here is available for linux/arm64.
+# Radio Aha infrastructure. Every image here is available for linux/arm64.
 #   Local dev:  docker compose up -d icecast liquidsoap postgres   (api + web run via `pnpm dev`)
 #   Production: COMPOSE_PROFILES=prod in infra/.env, then `docker compose up -d --build`
 #               adds the API container and Caddy (HTTPS) on ports 80/443. See README.
@@ -58,7 +58,7 @@ services:
       ICECAST_PORT: "8000"
       ICECAST_SOURCE_PASSWORD: ${ICECAST_SOURCE_PASSWORD}
       ICECAST_MOUNT: live
-      STATION_NAME: ${STATION_NAME:-Radio Jil}
+      STATION_NAME: ${STATION_NAME:-Radio Aha}
       STATION_DESCRIPTION: ${STATION_DESCRIPTION:-24/7 online radio}
       STATION_GENRE: ${STATION_GENRE:-Various}
       STATION_URL: ${STATION_URL:-http://localhost:3000}

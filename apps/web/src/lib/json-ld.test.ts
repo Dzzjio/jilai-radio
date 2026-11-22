@@ -11,7 +11,7 @@ describe("JSON-LD", () => {
   it("describes a schema.org RadioStation", () => {
     const data = stationJsonLd();
     expect(data["@type"]).toBe("RadioStation");
-    expect(data.name).toBe("Radio Jil");
+    expect(data.name).toBe("Radio Aha");
     expect(data.url).not.toMatch(/\/$/);
     expect(data.potentialAction["@type"]).toBe("ListenAction");
   });

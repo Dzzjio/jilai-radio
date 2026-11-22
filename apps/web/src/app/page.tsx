@@ -26,7 +26,7 @@ export default function HomePage() {
         <header className={s.title}>
           <div>
             <span className={s.eyebrow}>GENERAL ARRANGEMENT · LISTENING CONSOLE</span>
-            <h1 className={s.h1}>RADIO JIL</h1>
+            <h1 className={s.h1}>RADIO AHA</h1>
           </div>
           <div className={s.titleRight}>
             <p className={s.tagline}>

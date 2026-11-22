@@ -13,7 +13,7 @@ export function RecentTracks() {
 
   return (
     <table className={s.table}>
-      <caption className="sr-only">Last {ROWS} tracks played on Radio Jil, newest first</caption>
+      <caption className="sr-only">Last {ROWS} tracks played on Radio Aha, newest first</caption>
       <thead>
         <tr>
           <th scope="col" className={s.colItem}>ITEM</th>

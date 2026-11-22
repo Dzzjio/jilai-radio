@@ -1,4 +1,4 @@
-# Radio Jil API. Multi-arch: node:22-alpine and Alpine's ffmpeg exist for linux/amd64 and linux/arm64,
+# Radio Aha API. Multi-arch: node:22-alpine and Alpine's ffmpeg exist for linux/amd64 and linux/arm64,
 # so `docker compose build` on the Oracle ARM VM builds natively.
 # Build context: the repo root (pnpm workspace + lockfile).
 

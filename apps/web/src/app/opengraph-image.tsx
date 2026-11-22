@@ -32,7 +32,7 @@ export default function OpengraphImage() {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
             <div style={{ fontSize: 26, letterSpacing: 4, color: "#4b5156" }}>LISTENING CONSOLE</div>
-            <div style={{ fontSize: 120, fontWeight: 800, letterSpacing: 6, lineHeight: 1 }}>RADIO JIL</div>
+            <div style={{ fontSize: 120, fontWeight: 800, letterSpacing: 6, lineHeight: 1 }}>RADIO AHA</div>
             <div style={{ fontSize: 34 }}>Free 24/7 online radio</div>
             <div style={{ display: "flex", marginTop: 12, fontSize: 26, padding: "6px 16px", background: hot, alignSelf: "flex-start" }}>ON AIR · ONE STREAM FOR EVERYONE</div>
           </div>

@@ -39,7 +39,7 @@ export function AdminApp() {
         <header className={s.head}>
           <div>
             <span className={s.eyebrow}>ADMIN SHEET · MUSIC LIBRARY</span>
-            <h1 className={s.h1}>RADIO JIL</h1>
+            <h1 className={s.h1}>RADIO AHA</h1>
           </div>
           <div className={s.headActions}>
             <Link className={s.btn} href="/" style={{ display: "inline-flex", alignItems: "center", textDecoration: "none" }}>

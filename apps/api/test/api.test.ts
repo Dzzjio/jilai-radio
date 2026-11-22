@@ -88,7 +88,7 @@ describe("POST /internal/track-changed", () => {
   });
 
   it("shows the fallback as now playing without logging it to history", async () => {
-    const res = await trackChange({ title: "Station break", artist: "Radio Jil", filename: "/fallback/silence.mp3", fallback: true });
+    const res = await trackChange({ title: "Station break", artist: "Radio Aha", filename: "/fallback/silence.mp3", fallback: true });
     expect(res.statusCode).toBe(204);
     const np = (await ctx.app.inject("/now-playing")).json().nowPlaying;
     expect(np).toMatchObject({ title: "Station break", trackId: null, isFallback: true });
