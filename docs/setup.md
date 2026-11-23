@@ -85,13 +85,15 @@ Oracle blocks traffic twice: in the cloud network **and** in the VM's own firewa
 (`ssh ubuntu@<public-ip>`) and run:
 
 ```bash
-sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT
-sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT
-sudo iptables -I INPUT 6 -m state --state NEW -p udp --dport 443 -j ACCEPT
+N=$(sudo iptables -L INPUT --line-numbers | awk '/REJECT/ {print $1; exit}')   # position of Oracle's REJECT rule
+sudo iptables -I INPUT $N -m state --state NEW -p udp --dport 443 -j ACCEPT
+sudo iptables -I INPUT $N -m state --state NEW -p tcp --dport 443 -j ACCEPT
+sudo iptables -I INPUT $N -m state --state NEW -p tcp --dport 80 -j ACCEPT
 sudo netfilter-persistent save        # keep the rules after a reboot
+sudo iptables -L INPUT --line-numbers -n   # 80/443 ACCEPT must come before REJECT
 ```
 
-(The rules go before Oracle's final `REJECT` rule; `sudo iptables -L INPUT --line-numbers` shows the order.)
+(The rules must go before Oracle's `REJECT` rule; its position differs between images, hence `$N`.)
 
 ### 2.3 Point the domain at the server
 

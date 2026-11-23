@@ -5,10 +5,18 @@
 
 name: radio-jil
 
+# Every container keeps at most 3 × 10 MB of logs, so a chatty service can never fill the disk.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
+    logging: *logging
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-radio}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in infra/.env}
@@ -28,6 +36,7 @@ services:
     build: ./icecast
     image: radio-jil-icecast
     restart: unless-stopped
+    logging: *logging
     environment:
       ICECAST_SOURCE_PASSWORD: ${ICECAST_SOURCE_PASSWORD:?set ICECAST_SOURCE_PASSWORD in infra/.env}
       ICECAST_ADMIN_PASSWORD: ${ICECAST_ADMIN_PASSWORD:?set ICECAST_ADMIN_PASSWORD in infra/.env}
@@ -45,6 +54,7 @@ services:
   liquidsoap:
     image: savonet/liquidsoap:v2.4.6
     restart: unless-stopped
+    logging: *logging
     command: ["/radio/radio.liq"]
     # Same user as the API container, so both can read/move/delete live recordings.
     user: "1000:1000"
@@ -93,6 +103,7 @@ services:
       dockerfile: apps/api/Dockerfile
     image: radio-jil-api
     restart: unless-stopped
+    logging: *logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -134,6 +145,7 @@ services:
     profiles: ["prod"]
     image: caddy:2.10-alpine
     restart: unless-stopped
+    logging: *logging
     depends_on:
       api:
         condition: service_healthy
