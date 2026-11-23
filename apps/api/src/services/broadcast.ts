@@ -9,11 +9,26 @@ export interface LiveTarget {
   password: string;
 }
 
-/** ffmpeg: whatever the browser recorded (WebM/Ogg Opus or MP4 AAC) on stdin → MP3 into the live input. */
+/**
+ * Voice processing for the live show (one microphone, talk only). It runs before Liquidsoap,
+ * so the recording, and therefore the show's repeat, carries it too.
+ *   mono        average the channels: a mic that arrives on one channel only still reaches both ears
+ *   highpass    remove rumble below 80 Hz (desk bumps, traffic, handling noise)
+ *   acompressor even out quiet and loud moments (above −24 dB, 3:1), then +6 dB back
+ *   alimiter    lookahead limiter at −1.5 dB: laughs and shouts never clip
+ *   pan         copy the mono voice to both channels at full level (ffmpeg's own upmix drops 3 dB)
+ */
+export const VOICE_FILTER =
+  "aformat=channel_layouts=mono,highpass=f=80," +
+  "acompressor=threshold=0.063:ratio=3:attack=10:release=250:knee=2:makeup=2," +
+  "alimiter=limit=0.84:attack=5:release=100:level=disabled,pan=stereo|c0=c0|c1=c0";
+
+/** ffmpeg: whatever the browser recorded (WebM/Ogg Opus or MP4 AAC) on stdin → voice processing → MP3 into the live input. */
 export function ffmpegLiveArgs(t: LiveTarget): string[] {
   const auth = `source:${encodeURIComponent(t.password)}`;
   return [
     "-hide_banner", "-loglevel", "error", "-i", "pipe:0",
+    "-af", VOICE_FILTER,
     "-c:a", "libmp3lame", "-b:a", "320k", "-ar", "44100", "-ac", "2",
     "-content_type", "audio/mpeg", "-f", "mp3",
     `icecast://${auth}@${t.host}:${t.port}/${t.mount}`,

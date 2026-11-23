@@ -101,6 +101,10 @@ describe("ffmpeg target", () => {
   it("ffmpegLiveArgs builds the icecast target", () => {
     expect(ffmpegLiveArgs(TARGET)).toEqual([
       "-hide_banner", "-loglevel", "error", "-i", "pipe:0",
+      "-af",
+      "aformat=channel_layouts=mono,highpass=f=80," +
+        "acompressor=threshold=0.063:ratio=3:attack=10:release=250:knee=2:makeup=2," +
+        "alimiter=limit=0.84:attack=5:release=100:level=disabled,pan=stereo|c0=c0|c1=c0",
       "-c:a", "libmp3lame", "-b:a", "320k", "-ar", "44100", "-ac", "2",
       "-content_type", "audio/mpeg", "-f", "mp3",
       "icecast://source:p%40ss%20word@liquidsoap:8005/live-in",
