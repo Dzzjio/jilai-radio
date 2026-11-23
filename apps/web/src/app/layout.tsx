@@ -1,3 +1,4 @@
+import { Analytics } from "@vercel/analytics/next";
 import type { Metadata, Viewport } from "next";
 import { JetBrains_Mono, Michroma } from "next/font/google";
 import type { ReactNode } from "react";
@@ -60,6 +61,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             so it keeps playing across navigations even if a page doesn't render the player. */}
         {children}
         <JsonLd data={stationJsonLd()} />
+        <Analytics />
       </body>
     </html>
   );
