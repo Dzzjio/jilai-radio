@@ -39,8 +39,12 @@
   pointer-events: none;
 }
 
+/* One column, 520px wide on big screens, the screen's width (minus the gutters) on phones. */
 .main {
   position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: calc(520px + 2 * 16px);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -55,8 +59,7 @@
 
 .bar {
   box-sizing: border-box;
-  width: 520px;
-  max-width: 100%;
+  width: 100%;
   padding: 20px 24px 22px;
   border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.14);
@@ -228,6 +231,7 @@
 /* Countdown: 20:00, 19:59 … */
 .time {
   flex: none;
+  font-family: inherit;
   min-width: 4ch;
   font-size: 13px;
   font-variant-numeric: tabular-nums;
@@ -250,8 +254,7 @@
 /* Same width as the player bar above it. */
 .text {
   box-sizing: border-box;
-  width: 520px;
-  max-width: 100%;
+  width: 100%;
   margin: 0;
   font-size: 15px;
   line-height: 1.7;
@@ -281,3 +284,33 @@
   background: #ff6a33;
   box-shadow: 0 0 8px rgba(255, 106, 51, 0.8);
 }
+
+/* Phones: a little tighter, same look. */
+@media (max-width: 480px) {
+  .main {
+    gap: 22px;
+  }
+
+  .bar {
+    padding: 14px 16px 14px;
+    border-radius: 16px;
+  }
+
+  .np {
+    margin-bottom: 8px;
+  }
+
+  .title {
+    font-size: 16px;
+  }
+
+  .controls {
+    gap: 10px;
+  }
+
+  .text {
+    font-size: 14px;
+    line-height: 1.65;
+  }
+}
+

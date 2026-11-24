@@ -77,7 +77,8 @@ const SEEK_STEP = 10;
  * The player bar: play/pause and how far into the track we are, counting down.
  * Above it: the admin's title, if they typed one, and a LIVE badge during a live show.
  * Between shows the recording plays as a file (see AudioController.useLoop): the bar follows the
- * actual playback, freezes on pause, and a click or drag jumps. Live: no seeking, no countdown.
+ * actual playback and holds still whenever nothing plays; a click or drag jumps. Live: no seeking,
+ * no countdown.
  */
 export function NowPlayingBar({ title }: { title: string | null }) {
   const { status, controller } = useAudio();
@@ -92,18 +93,23 @@ export function NowPlayingBar({ title }: { title: string | null }) {
   const fillRef = useRef<HTMLSpanElement>(null);
   const timeRef = useRef<HTMLSpanElement>(null);
   const seekRef = useRef<HTMLDivElement>(null);
-  /** Position frozen when the listener stops the stream (a file pauses by itself). */
+  /** While stopped (and no file loaded yet), the bar holds still at this spot. */
   const frozenRef = useRef<Shown | null>(null);
   /** Fraction under the pointer while dragging. */
   const dragRef = useRef<number | null>(null);
+  const statusRef = useRef(status);
+  statusRef.current = status;
 
-  // Between shows: hand the loop file to the player, starting where the radio is.
+  // Between shows: hand the loop file to the player. Play starts at the spot the bar shows
+  // (where the radio was when the page opened, or where it was stopped).
   useEffect(() => {
     controller?.useLoop(
       loopUrl
         ? {
             url: loopUrl,
             startAt: () => {
+              const f = frozenRef.current;
+              if (f) return f.total - f.remaining;
               const n = npRef.current;
               return n ? (loopPosition(n.startedAt, n.airSec ?? n.durationSec, Date.now()) ?? 0) : 0;
             },
@@ -112,23 +118,38 @@ export function NowPlayingBar({ title }: { title: string | null }) {
     );
   }, [controller, loopUrl]);
 
-  const compute = (): Shown | null => {
+  /** Where the radio (or the loaded file) is right now, ignoring any freeze or drag. */
+  const radioNow = (): Shown | null => {
     const n = npRef.current;
     if (!n || n.isLive) return null;
     const pos = controller?.position();
-    let shown: Shown | null = null;
-    if (pos) {
-      shown = { p: pos.current / pos.duration, remaining: pos.duration - pos.current, total: pos.duration };
-    } else if (frozenRef.current) {
-      shown = frozenRef.current;
-    } else if (n.loopUrl && n.durationSec) {
-      // file not loaded yet: where the radio is (playback will start there)
+    if (pos) return { p: pos.current / pos.duration, remaining: pos.duration - pos.current, total: pos.duration };
+    if (n.loopUrl && n.durationSec) {
       const at = loopPosition(n.startedAt, n.airSec ?? n.durationSec, Date.now()) ?? 0;
-      shown = { p: at / n.durationSec, remaining: n.durationSec - at, total: n.durationSec };
-    } else if (n.airSec) {
+      return { p: at / n.durationSec, remaining: n.durationSec - at, total: n.durationSec };
+    }
+    if (n.airSec) {
       // stream: what a listener hears, a few seconds behind the server
       const at = loopPosition(n.startedAt, n.airSec, Date.now(), STREAM_DELAY_MS) ?? 0;
-      shown = { p: at / n.airSec, remaining: n.airSec - at, total: n.airSec };
+      return { p: at / n.airSec, remaining: n.airSec - at, total: n.airSec };
+    }
+    return null;
+  };
+
+  const compute = (): Shown | null => {
+    const st = statusRef.current;
+    const stopped = st !== "playing" && st !== "loading";
+    let shown: Shown | null;
+    if (controller?.position()) {
+      // a loaded file moves only while it plays
+      frozenRef.current = null;
+      shown = radioNow();
+    } else if (stopped) {
+      frozenRef.current ??= radioNow();
+      shown = frozenRef.current;
+    } else {
+      frozenRef.current = null;
+      shown = radioNow();
     }
     if (shown && dragRef.current !== null) {
       const p = dragRef.current;
@@ -137,19 +158,10 @@ export function NowPlayingBar({ title }: { title: string | null }) {
     return shown;
   };
 
-  // Stopping the stream freezes the bar; playing again (or a new track) lets it move.
-  // Before the first play it runs with the radio.
-  const prevStatus = useRef(status);
-  useEffect(() => {
-    const was = prevStatus.current;
-    prevStatus.current = status;
-    if (status === "stopped" && was !== "stopped" && !controller?.position()) frozenRef.current = compute();
-    else if (status !== "stopped") frozenRef.current = null;
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- compute reads refs
-  }, [status, controller]);
+  // A different recording, or live starting/ending: take the new spot.
   useEffect(() => {
     frozenRef.current = null;
-  }, [np?.startedAt]);
+  }, [loopUrl, live]);
 
   // Paint every frame straight into the DOM (no re-render); browsers skip frames in hidden tabs.
   useEffect(() => {
