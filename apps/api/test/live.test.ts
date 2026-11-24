@@ -64,7 +64,7 @@ describe("internal live endpoints", () => {
   it("going live shows LIVE now playing; DJ titles go to history", async () => {
     await post("/internal/live", { live: true });
     let np = (await ctx.app.inject("/now-playing")).json().nowPlaying;
-    expect(np).toMatchObject({ isLive: true, title: "Live show", durationSec: null });
+    expect(np).toMatchObject({ isLive: true, title: "Live show", durationSec: null, airSec: null, loopUrl: null });
     await post("/internal/track-changed", { title: "Friday Session", artist: "Nika", live: true });
     np = (await ctx.app.inject("/now-playing")).json().nowPlaying;
     expect(np).toMatchObject({ isLive: true, title: "Friday Session", artist: "Nika", trackId: null, durationSec: null });
@@ -205,5 +205,34 @@ describe("admin repeat control", () => {
     await ctx.app.inject({ method: "DELETE", url: `/admin/tracks/${a.id}`, headers: admin() });
     expect((await repeat()).statusCode).toBe(204);
     expect((await ctx.app.inject({ method: "PUT", url: "/admin/repeat", headers: admin(), payload: {} })).statusCode).toBe(400);
+  });
+});
+
+describe("loop file for the website", () => {
+  it("now playing points at the on-repeat file; only that file is served, with Range support", async () => {
+    copyFileSync(path.join(fixtures, "show.mp3"), path.join(musicDir, "a.mp3"));
+    copyFileSync(path.join(fixtures, "show.mp3"), path.join(musicDir, "b.mp3"));
+    await ctx.app.inject({ method: "POST", url: "/admin/tracks/scan", headers: admin() });
+    const [a, b] = (await ctx.app.inject({ url: "/admin/tracks", headers: admin() })).json().items;
+    await ctx.app.inject({ method: "PUT", url: "/admin/repeat", headers: admin(), payload: { trackId: a.id } });
+
+    // Liquidsoap plays the repeat: 35 s file, 5 s crossfade → a new loop every 30 s
+    await post("/internal/track-changed", { title: "Show", filename: `/music/${a.filename}` });
+    let np = (await ctx.app.inject("/now-playing")).json().nowPlaying;
+    expect(np).toMatchObject({ trackId: a.id, durationSec: 35, airSec: 30, loopUrl: `/loop/${a.id}.mp3` });
+
+    const file = await ctx.app.inject({ url: np.loopUrl });
+    expect(file.statusCode).toBe(200);
+    expect(file.headers["content-type"]).toMatch(/audio\/mpeg/);
+    const part = await ctx.app.inject({ url: np.loopUrl, headers: { range: "bytes=100-199" } });
+    expect(part.statusCode).toBe(206);
+    expect(part.rawPayload.length).toBe(100);
+
+    // a library track that isn't on repeat: no file, and its URL is refused
+    await post("/internal/track-changed", { title: "Other", filename: `/music/${b.filename}` });
+    np = (await ctx.app.inject("/now-playing")).json().nowPlaying;
+    expect(np).toMatchObject({ trackId: b.id, airSec: 30, loopUrl: null });
+    expect((await ctx.app.inject({ url: `/loop/${b.id}.mp3` })).statusCode).toBe(404);
+    expect((await ctx.app.inject({ url: "/loop/abc.mp3" })).statusCode).toBe(404);
   });
 });

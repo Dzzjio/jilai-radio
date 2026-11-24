@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, type KeyboardEvent, type PointerEvent } from "react";
 import { DEFAULT_BACKGROUND, type ResolvedBackground } from "@/lib/appearance";
-import { loopProgress } from "@/lib/loop-progress";
+import { config } from "@/lib/config";
+import { formatRemaining, loopPosition, STREAM_DELAY_MS } from "@/lib/loop-progress";
 import { useAudio, useLive } from "@/lib/radio-client";
 import { site } from "@/lib/site";
 import { useMediaSession } from "@/lib/use-media-session";
@@ -63,31 +64,160 @@ function BgVideo({ src, poster, fog }: { src: string; poster: string | null; fog
   );
 }
 
+/** What the bar shows right now: how far (0..1), the time left, and the length for the slider. */
+interface Shown {
+  p: number;
+  remaining: number;
+  total: number;
+}
+
+const SEEK_STEP = 10;
+
 /**
- * The player bar: play/pause and how far into the track we are (loops with the track).
+ * The player bar: play/pause and how far into the track we are, counting down.
  * Above it: the admin's title, if they typed one, and a LIVE badge during a live show.
+ * Between shows the recording plays as a file (see AudioController.useLoop): the bar follows the
+ * actual playback, freezes on pause, and a click or drag jumps. Live: no seeking, no countdown.
  */
 export function NowPlayingBar({ title }: { title: string | null }) {
   const { status, controller } = useAudio();
   const { nowPlaying: np } = useLive();
-  const active = status === "playing" || status === "loading";
   const live = np?.isLive ?? false;
+  const loopUrl = np && !live && np.loopUrl ? `${config.apiUrl}${np.loopUrl}` : null;
+  const seekable = loopUrl !== null && !!np?.durationSec;
   useMediaSession(title);
 
-  // The fill is a CSS animation as long as the track, started part-way in (negative delay), so it
-  // loops by itself; it is re-synced whenever a new track starts. Set after mount: no clock on the server.
-  const [loop, setLoop] = useState<{ duration: number; delay: number } | null>(null);
+  const npRef = useRef(np);
+  npRef.current = np;
+  const fillRef = useRef<HTMLSpanElement>(null);
+  const timeRef = useRef<HTMLSpanElement>(null);
+  const seekRef = useRef<HTMLDivElement>(null);
+  /** Position frozen when the listener stops the stream (a file pauses by itself). */
+  const frozenRef = useRef<Shown | null>(null);
+  /** Fraction under the pointer while dragging. */
+  const dragRef = useRef<number | null>(null);
+
+  // Between shows: hand the loop file to the player, starting where the radio is.
   useEffect(() => {
-    const sync = () => {
-      const p = np && !np.isLive ? loopProgress(np.startedAt, np.durationSec, Date.now()) : null;
-      setLoop(p === null || !np?.durationSec ? null : { duration: np.durationSec, delay: -p * np.durationSec });
+    controller?.useLoop(
+      loopUrl
+        ? {
+            url: loopUrl,
+            startAt: () => {
+              const n = npRef.current;
+              return n ? (loopPosition(n.startedAt, n.airSec ?? n.durationSec, Date.now()) ?? 0) : 0;
+            },
+          }
+        : null,
+    );
+  }, [controller, loopUrl]);
+
+  const compute = (): Shown | null => {
+    const n = npRef.current;
+    if (!n || n.isLive) return null;
+    const pos = controller?.position();
+    let shown: Shown | null = null;
+    if (pos) {
+      shown = { p: pos.current / pos.duration, remaining: pos.duration - pos.current, total: pos.duration };
+    } else if (frozenRef.current) {
+      shown = frozenRef.current;
+    } else if (n.loopUrl && n.durationSec) {
+      // file not loaded yet: where the radio is (playback will start there)
+      const at = loopPosition(n.startedAt, n.airSec ?? n.durationSec, Date.now()) ?? 0;
+      shown = { p: at / n.durationSec, remaining: n.durationSec - at, total: n.durationSec };
+    } else if (n.airSec) {
+      // stream: what a listener hears, a few seconds behind the server
+      const at = loopPosition(n.startedAt, n.airSec, Date.now(), STREAM_DELAY_MS) ?? 0;
+      shown = { p: at / n.airSec, remaining: n.airSec - at, total: n.airSec };
+    }
+    if (shown && dragRef.current !== null) {
+      const p = dragRef.current;
+      shown = { p, remaining: shown.total * (1 - p), total: shown.total };
+    }
+    return shown;
+  };
+
+  // Stopping the stream freezes the bar; playing again (or a new track) lets it move.
+  // Before the first play it runs with the radio.
+  const prevStatus = useRef(status);
+  useEffect(() => {
+    const was = prevStatus.current;
+    prevStatus.current = status;
+    if (status === "stopped" && was !== "stopped" && !controller?.position()) frozenRef.current = compute();
+    else if (status !== "stopped") frozenRef.current = null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- compute reads refs
+  }, [status, controller]);
+  useEffect(() => {
+    frozenRef.current = null;
+  }, [np?.startedAt]);
+
+  // Paint every frame straight into the DOM (no re-render); browsers skip frames in hidden tabs.
+  useEffect(() => {
+    let raf = 0;
+    let lastSecond = -1;
+    const paint = () => {
+      const shown = live ? null : compute();
+      const fill = fillRef.current;
+      if (fill) fill.style.transform = `scaleX(${live ? 1 : (shown?.p ?? 0)})`;
+      const second = shown ? Math.ceil(shown.remaining - 1e-6) : -1;
+      if (second !== lastSecond) {
+        lastSecond = second;
+        if (timeRef.current) timeRef.current.textContent = shown ? formatRemaining(shown.remaining) : "";
+        const el = seekRef.current;
+        if (el && shown) {
+          const now = Math.floor(shown.total - shown.remaining);
+          el.setAttribute("aria-valuenow", String(now));
+          el.setAttribute("aria-valuetext", `${formatRemaining(shown.remaining)} left`);
+        }
+      }
+      raf = requestAnimationFrame(paint);
     };
-    sync();
-    // timers sleep in background tabs; re-sync on return so the bar never drifts
-    const wake = () => document.visibilityState === "visible" && sync();
-    document.addEventListener("visibilitychange", wake);
-    return () => document.removeEventListener("visibilitychange", wake);
-  }, [np]);
+    paint();
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- compute reads refs
+  }, [live, controller]);
+
+  const total = () => compute()?.total ?? np?.durationSec ?? 0;
+  const fractionAt = (clientX: number) => {
+    const r = seekRef.current?.getBoundingClientRect();
+    return r && r.width > 0 ? Math.min(1, Math.max(0, (clientX - r.left) / r.width)) : 0;
+  };
+  const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    if (!seekable || e.button !== 0) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = fractionAt(e.clientX);
+  };
+  const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current !== null) dragRef.current = fractionAt(e.clientX);
+  };
+  const onPointerUp = () => {
+    const p = dragRef.current;
+    if (p === null) return;
+    const t = total();
+    dragRef.current = null;
+    controller?.seek(Math.min(p * t, Math.max(0, t - 0.5)));
+  };
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const shown = compute();
+    if (!shown) return;
+    const at = shown.total - shown.remaining;
+    const to: Record<string, number> = {
+      ArrowRight: at + SEEK_STEP,
+      ArrowUp: at + SEEK_STEP,
+      ArrowLeft: at - SEEK_STEP,
+      ArrowDown: at - SEEK_STEP,
+      PageUp: at + 60,
+      PageDown: at - 60,
+      Home: 0,
+      End: shown.total - 1,
+    };
+    const target = to[e.key];
+    if (target === undefined) return;
+    e.preventDefault();
+    controller?.seek(Math.min(Math.max(0, target), Math.max(0, shown.total - 0.5)));
+  };
+
+  const active = status === "playing" || status === "loading";
 
   return (
     <section className={s.bar} aria-label="Now playing">
@@ -125,17 +255,33 @@ export function NowPlayingBar({ title }: { title: string | null }) {
             </svg>
           )}
         </button>
-        <div className={s.track} aria-hidden="true">
-          {live ? (
-            <span className={s.fillLive} />
-          ) : loop ? (
-            <span
-              key={`${np?.startedAt}`}
-              className={s.fill}
-              style={{ animationDuration: `${loop.duration}s`, animationDelay: `${loop.delay}s` }}
-            />
-          ) : null}
-        </div>
+        {seekable ? (
+          <div
+            ref={seekRef}
+            className={`${s.seek} ${s.seekable}`}
+            role="slider"
+            tabIndex={0}
+            aria-label="Position in the recording"
+            aria-valuemin={0}
+            aria-valuemax={Math.round(np?.durationSec ?? 0)}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={() => (dragRef.current = null)}
+            onKeyDown={onKeyDown}
+          >
+            <span className={s.track}>
+              <span ref={fillRef} className={s.fill} />
+            </span>
+          </div>
+        ) : (
+          <div ref={seekRef} className={s.seek} aria-hidden="true">
+            <span className={s.track}>
+              <span ref={fillRef} className={live ? `${s.fill} ${s.fillLive}` : s.fill} />
+            </span>
+          </div>
+        )}
+        {live ? null : <span ref={timeRef} className={s.time} aria-hidden="true" />}
       </div>
       {/* only the error is shown; "connecting" is for screen readers */}
       <p className={status === "error" ? s.error : "sr-only"} role="status" aria-live="polite">

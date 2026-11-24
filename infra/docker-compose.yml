@@ -129,6 +129,8 @@ services:
       LIVE_MOUNT: live-in
       LIVE_PASSWORD: ${LIVE_PASSWORD:-}
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-300}
+      # Same value Liquidsoap uses: the site's progress bar needs it to know when a loop starts over.
+      CROSSFADE_SECONDS: ${CROSSFADE_SECONDS:-5.}
       CORS_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
       # The API refuses to start if these are missing or too short.
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}

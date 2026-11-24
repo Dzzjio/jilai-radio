@@ -6,6 +6,10 @@ class FakeAudio {
   src = "";
   preload = "";
   muted = false;
+  currentTime = 0;
+  duration = Number.NaN;
+  loop = false;
+  readyState = 0;
   #volume = 1;
   readOnlyVolume = false;
   playResult: () => Promise<void> = () => Promise.resolve();
@@ -196,3 +200,84 @@ describe("audio controller", () => {
     });
   });
 });
+
+const loopSrc = (at = 125) => ({ url: "https://api.example.com/loop/7.mp3", startAt: () => at });
+const loaded = (el: FakeAudio, duration = 600) => {
+  el.duration = duration;
+  el.readyState = 1;
+  el.fire("loadedmetadata");
+};
+
+describe("loop file mode", () => {
+  it("plays the file from where the radio is, looping", () => {
+    const { el, ctrl } = setup();
+    ctrl.useLoop(loopSrc(125));
+    ctrl.play();
+    expect(el.src).toBe("https://api.example.com/loop/7.mp3");
+    expect(el.loop).toBe(true);
+    loaded(el);
+    expect(el.currentTime).toBe(125);
+    el.fire("playing");
+    expect(ctrl.getState().status).toBe("playing");
+    expect(ctrl.position()).toEqual({ current: 125, duration: 600 });
+  });
+
+  it("pause keeps the place; play carries on from it", () => {
+    const { el, ctrl } = setup();
+    ctrl.useLoop(loopSrc());
+    ctrl.play();
+    loaded(el);
+    el.currentTime = 300;
+    ctrl.pause();
+    expect(ctrl.getState().status).toBe("stopped");
+    expect(el.src).toBe("https://api.example.com/loop/7.mp3");
+    expect(ctrl.position()?.current).toBe(300);
+    ctrl.play();
+    expect(el.played).toEqual(["https://api.example.com/loop/7.mp3", "https://api.example.com/loop/7.mp3"]);
+    expect(el.currentTime).toBe(300);
+  });
+
+  it("seek jumps, and starts playing when stopped", () => {
+    const { el, ctrl } = setup();
+    ctrl.useLoop(loopSrc());
+    ctrl.seek(42);
+    expect(ctrl.getState().status).toBe("loading");
+    loaded(el);
+    expect(el.currentTime).toBe(42);
+    ctrl.seek(500);
+    expect(el.currentTime).toBe(500);
+  });
+
+  it("seek does nothing on the stream", () => {
+    const { el, ctrl } = setup();
+    ctrl.seek(42);
+    expect(ctrl.getState().status).toBe("stopped");
+    expect(el.played).toEqual([]);
+    expect(ctrl.position()).toBeNull();
+  });
+
+  it("a live show switches a playing listener to the stream, and back to the file after", () => {
+    const { el, ctrl } = setup();
+    ctrl.useLoop(loopSrc());
+    ctrl.play();
+    loaded(el);
+    ctrl.useLoop(null);
+    expect(el.src).toMatch(/^https:\/\/api\.example\.com\/stream\?t=\d+$/);
+    expect(el.loop).toBe(false);
+    expect(ctrl.position()).toBeNull();
+    ctrl.useLoop({ url: "https://api.example.com/loop/8.mp3", startAt: () => 3 });
+    expect(el.src).toBe("https://api.example.com/loop/8.mp3");
+  });
+
+  it("the same loop again (new startAt) doesn't interrupt playback", () => {
+    const { el, ctrl } = setup();
+    ctrl.useLoop(loopSrc());
+    ctrl.play();
+    loaded(el);
+    el.currentTime = 200;
+    ctrl.useLoop(loopSrc(10));
+    expect(el.played).toHaveLength(1);
+    expect(el.currentTime).toBe(200);
+  });
+});
+

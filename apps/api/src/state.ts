@@ -12,6 +12,10 @@ export interface NowPlaying {
   isLive: boolean;
   /** Length of the track on air, when known (null while live or for the fallback). */
   durationSec: number | null;
+  /** Seconds until the next track takes over: the length minus the crossfade. */
+  airSec: number | null;
+  /** The looped recording as a file (path on the API), so listeners can play and seek it. Null otherwise. */
+  loopUrl: string | null;
 }
 
 export interface HistoryItem {

@@ -25,12 +25,27 @@ function titleFromFilename(filename: string) {
 
 const nullIfBlank = (v: string) => (v.trim() === "" ? null : v.trim());
 
+/** Timing and file fields of "now playing" for a library track. */
+export function trackTiming(
+  track: { id: number; durationSec: number | null; onRepeat: boolean },
+  crossfadeSec: number,
+): Pick<NowPlaying, "durationSec" | "airSec" | "loopUrl"> {
+  const d = track.durationSec;
+  return {
+    durationSec: d,
+    airSec: d && d > 0 ? Math.max(1, d - crossfadeSec) : null,
+    loopUrl: track.onRepeat ? `/loop/${track.id}.mp3` : null,
+  };
+}
+
+const NO_TIMING = { durationSec: null, airSec: null, loopUrl: null } as const;
+
 /**
  * Handles a track change reported by Liquidsoap: makes sure the track exists,
  * logs it to play_history and returns the new "now playing" entry.
  * The fallback (jingle/silence) is not logged to history.
  */
-export async function recordTrackChange(db: Db, change: TrackChange, musicDir: string): Promise<NowPlaying> {
+export async function recordTrackChange(db: Db, change: TrackChange, musicDir: string, crossfadeSec = 0): Promise<NowPlaying> {
   const now = new Date();
 
   if (change.fallback) {
@@ -42,7 +57,7 @@ export async function recordTrackChange(db: Db, change: TrackChange, musicDir: s
       startedAt: now.toISOString(),
       isFallback: true,
       isLive: false,
-      durationSec: null,
+      ...NO_TIMING,
     };
   }
 
@@ -72,7 +87,7 @@ export async function recordTrackChange(db: Db, change: TrackChange, musicDir: s
       startedAt: row.playedAt.toISOString(),
       isFallback: false,
       isLive: false,
-      durationSec: track.durationSec,
+      ...trackTiming(track, crossfadeSec),
     };
   });
 }
@@ -81,7 +96,7 @@ export async function recordTrackChange(db: Db, change: TrackChange, musicDir: s
 export async function recordLiveMetadata(db: Db, title: string, artist: string | null): Promise<NowPlaying> {
   const [row] = await db.insert(playHistory).values({ trackId: null, title, artist, album: null }).returning();
   if (!row) throw new Error("failed to insert play_history row");
-  return { trackId: null, title, artist, album: null, startedAt: row.playedAt.toISOString(), isFallback: false, isLive: true, durationSec: null };
+  return { trackId: null, title, artist, album: null, startedAt: row.playedAt.toISOString(), isFallback: false, isLive: true, ...NO_TIMING };
 }
 
 export async function getRecentHistory(db: Db, limit = 10): Promise<HistoryItem[]> {
@@ -97,10 +112,10 @@ export async function getRecentHistory(db: Db, limit = 10): Promise<HistoryItem[
 }
 
 /** Restores "now playing" after an API restart from the latest history row. */
-export async function getLatestNowPlaying(db: Db): Promise<NowPlaying | null> {
+export async function getLatestNowPlaying(db: Db, crossfadeSec = 0): Promise<NowPlaying | null> {
   const [last] = await getRecentHistory(db, 1);
   if (!last) return null;
-  const [track] = last.trackId ? await db.select({ d: tracks.durationSec }).from(tracks).where(eq(tracks.id, last.trackId)) : [];
+  const [track] = last.trackId ? await db.select().from(tracks).where(eq(tracks.id, last.trackId)) : [];
   return {
     trackId: last.trackId,
     title: last.title,
@@ -109,6 +124,6 @@ export async function getLatestNowPlaying(db: Db): Promise<NowPlaying | null> {
     startedAt: last.playedAt,
     isFallback: false,
     isLive: false,
-    durationSec: track?.d ?? null,
+    ...(track ? trackTiming(track, crossfadeSec) : NO_TIMING),
   };
 }

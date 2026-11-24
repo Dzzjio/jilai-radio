@@ -172,6 +172,25 @@
   }
 }
 
+/* The line, inside a taller hit area so it's easy to click or drag. */
+.seek {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  height: 28px;
+  touch-action: none;
+}
+
+.seekable {
+  cursor: pointer;
+}
+
+.seekable:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
 .track {
   position: relative;
   flex: 1;
@@ -181,29 +200,18 @@
   background: rgba(255, 255, 255, 0.26);
 }
 
-.fill,
-.fillLive {
+/* Width set every frame from the player (scaleX); starts empty. */
+.fill {
   position: absolute;
   inset: 0;
   border-radius: 999px;
   background: #fff;
+  transform: scaleX(0);
   transform-origin: left center;
 }
 
-/* Track progress: grows over the track's length, then starts over (timing set inline). */
-.fill {
-  animation-name: grow;
-  animation-timing-function: linear;
-  animation-iteration-count: infinite;
-}
-
-@keyframes grow {
-  from {
-    transform: scaleX(0);
-  }
-  to {
-    transform: scaleX(1);
-  }
+.seekable:hover .track {
+  background: rgba(255, 255, 255, 0.34);
 }
 
 /* Live: no end to show, so the whole line is lit and breathes gently. */
@@ -215,6 +223,20 @@
   50% {
     opacity: 0.6;
   }
+}
+
+/* Countdown: 20:00, 19:59 … */
+.time {
+  flex: none;
+  min-width: 4ch;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.time:empty {
+  display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

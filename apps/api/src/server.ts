@@ -10,7 +10,7 @@ const { db, sql } = createDb(env.DATABASE_URL);
 await runMigrations(db);
 
 const radio = new RadioState();
-radio.nowPlaying = await getLatestNowPlaying(db);
+radio.nowPlaying = await getLatestNowPlaying(db, env.CROSSFADE_SECONDS);
 
 const app = await buildApp({ env, db, radio });
 

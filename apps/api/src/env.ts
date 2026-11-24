@@ -26,6 +26,8 @@ const schema = z.object({
   LIVE_PORT: z.coerce.number().int().positive().default(8005),
   LIVE_MOUNT: z.string().default("live-in"),
   LIVE_PASSWORD: z.string().default(""),
+  /** Liquidsoap's crossfade between tracks (same variable it reads): a track is "on air" for its length minus this. */
+  CROSSFADE_SECONDS: z.coerce.number().min(0).max(30).default(5),
   MAX_UPLOAD_MB: z.coerce.number().int().min(1).max(2000).default(300),
   FFPROBE_PATH: z.string().default("ffprobe"),
   ADMIN_PASSWORD: z.string().min(12, "ADMIN_PASSWORD must be at least 12 characters"),

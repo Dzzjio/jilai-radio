@@ -12,8 +12,28 @@ export interface AudioState {
 
 export type AudioLike = Pick<
   HTMLAudioElement,
-  "play" | "pause" | "load" | "removeAttribute" | "addEventListener" | "volume" | "muted" | "src" | "preload" | "crossOrigin"
+  | "play"
+  | "pause"
+  | "load"
+  | "removeAttribute"
+  | "addEventListener"
+  | "volume"
+  | "muted"
+  | "src"
+  | "preload"
+  | "crossOrigin"
+  | "currentTime"
+  | "duration"
+  | "loop"
+  | "readyState"
 >;
+
+/** The looped recording as a file: played instead of the stream between live shows, so it can seek. */
+export interface LoopSource {
+  url: string;
+  /** Where the radio is inside the file right now, in seconds: playback starts there. */
+  startAt: () => number;
+}
 
 /**
  * Optional Web Audio routing (element → analyser → gain → speakers).
@@ -57,10 +77,11 @@ function readStored(storage: StorageLike | null | undefined) {
 }
 
 /**
- * Controls the single <audio> element for the live stream.
+ * Controls the single <audio> element: the live stream, or the looped recording as a file.
  * - Nothing is downloaded until the first play (good for page performance).
- * - Play always joins the live edge (cache-busted URL); pause drops the
+ * - Stream: play always joins the live edge (cache-busted URL); pause drops the
  *   connection, so resuming never plays stale buffered audio.
+ * - Loop file (see useLoop): starts where the radio is, loops, pauses in place and can seek.
  * - If the stream errors or ends while the listener wants audio, it retries
  *   with backoff (the server may be restarting).
  */
@@ -78,6 +99,11 @@ export function createAudioController(deps: AudioControllerDeps) {
   let wantPlaying = false;
   let retries = 0;
   let retryTimer: unknown = null;
+  let loop: LoopSource | null = null;
+  /** The element holds the loop file (not the stream). */
+  let fileLoaded = false;
+  /** A position to jump to once the file's length is known. */
+  let pendingSeek: number | null = null;
 
   const set = (patch: Partial<AudioState>) => {
     const next = { ...state, ...patch };
@@ -140,19 +166,45 @@ export function createAudioController(deps: AudioControllerDeps) {
     el.addEventListener("waiting", () => {
       if (wantPlaying) set({ status: "loading" });
     });
+    el.addEventListener("loadedmetadata", applyPendingSeek);
     el.addEventListener("error", onFailure);
     el.addEventListener("ended", onFailure);
     return el;
   }
 
+  function applyPendingSeek() {
+    if (!audio || !fileLoaded || pendingSeek === null) return;
+    const d = audio.duration;
+    if (!Number.isFinite(d) || d <= 0) return;
+    audio.currentTime = ((pendingSeek % d) + d) % d;
+    pendingSeek = null;
+  }
+
   function onFailure() {
-    if (wantPlaying) scheduleRetry();
+    if (!wantPlaying) return;
+    // a broken file load is retried from where it was
+    if (fileLoaded && audio) {
+      pendingSeek ??= audio.currentTime || null;
+      fileLoaded = false;
+    }
+    scheduleRetry();
   }
 
   function startStream() {
     const el = ensureAudio();
-    const sep = deps.streamUrl.includes("?") ? "&" : "?";
-    el.src = `${deps.streamUrl}${sep}t=${now()}`;
+    if (loop) {
+      if (!fileLoaded) {
+        el.loop = true;
+        el.src = loop.url;
+        fileLoaded = true;
+        pendingSeek ??= loop.startAt();
+      }
+    } else {
+      el.loop = false;
+      fileLoaded = false;
+      const sep = deps.streamUrl.includes("?") ? "&" : "?";
+      el.src = `${deps.streamUrl}${sep}t=${now()}`;
+    }
     void graph?.resume();
     el.play().catch((err: unknown) => {
       if (!wantPlaying) return;
@@ -184,6 +236,8 @@ export function createAudioController(deps: AudioControllerDeps) {
   }
 
   function releaseStream() {
+    fileLoaded = false;
+    pendingSeek = null;
     if (!audio) return;
     audio.pause();
     audio.removeAttribute("src");
@@ -207,12 +261,42 @@ export function createAudioController(deps: AudioControllerDeps) {
       wantPlaying = false;
       if (retryTimer !== null) clearTimer(retryTimer);
       retryTimer = null;
-      releaseStream();
+      // the loop file pauses in place (play resumes there); the stream is dropped
+      if (fileLoaded && audio) audio.pause();
+      else releaseStream();
       set({ status: "stopped" });
     },
     toggle() {
       if (wantPlaying) controller.pause();
       else controller.play();
+    },
+    /**
+     * Between live shows: the recording on repeat, played as a file. null = the live stream.
+     * Switching while playing carries on with the new source.
+     */
+    useLoop(next: LoopSource | null) {
+      if (next?.url === loop?.url) {
+        loop = next;
+        return;
+      }
+      loop = next;
+      if (!fileLoaded && !(wantPlaying && audio)) return;
+      releaseStream();
+      if (wantPlaying) startStream();
+    },
+    /** Loop file only: jump to `sec` (and start playing if stopped). */
+    seek(sec: number) {
+      if (!loop || !Number.isFinite(sec)) return;
+      pendingSeek = Math.max(0, sec);
+      applyPendingSeek();
+      if (!wantPlaying) controller.play();
+    },
+    /** Loop file only, once loaded: where playback is and how long the file is. */
+    position(): { current: number; duration: number } | null {
+      if (!audio || !fileLoaded) return null;
+      const d = audio.duration;
+      if (!Number.isFinite(d) || d <= 0) return null;
+      return { current: pendingSeek ?? audio.currentTime, duration: d };
     },
     setVolume(v: number) {
       const volume = clampVolume(v);

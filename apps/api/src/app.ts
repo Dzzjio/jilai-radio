@@ -78,12 +78,13 @@ export async function buildApp({ env, db, radio = new RadioState(), broadcast, l
     maxAge: "365d",
   });
 
-  await app.register(publicRoutes);
+  await app.register(publicRoutes, { musicDir: env.MUSIC_DIR });
   await app.register(wsRoutes);
   await app.register(internalRoutes, {
     prefix: "/internal",
     secret: env.INTERNAL_SECRET,
     musicDir: env.LIQUIDSOAP_MUSIC_DIR,
+    crossfadeSec: env.CROSSFADE_SECONDS,
   });
   await app.register(adminRoutes, {
     prefix: "/admin",

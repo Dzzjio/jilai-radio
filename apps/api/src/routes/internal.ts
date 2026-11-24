@@ -22,7 +22,7 @@ export function secretMatches(given: unknown, expected: string): boolean {
 }
 
 /** Endpoints called by Liquidsoap only, guarded by the shared INTERNAL_SECRET. */
-export const internalRoutes: FastifyPluginAsync<{ secret: string; musicDir: string }> = async (app, opts) => {
+export const internalRoutes: FastifyPluginAsync<{ secret: string; musicDir: string; crossfadeSec: number }> = async (app, opts) => {
   app.addHook("onRequest", async (req, reply) => {
     if (!secretMatches(req.headers["x-internal-secret"], opts.secret)) {
       return reply.code(401).send({ error: "unauthorized" });
@@ -45,7 +45,7 @@ export const internalRoutes: FastifyPluginAsync<{ secret: string; musicDir: stri
       return reply.code(204).send();
     }
 
-    const np = await recordTrackChange(app.db, change, opts.musicDir);
+    const np = await recordTrackChange(app.db, change, opts.musicDir, opts.crossfadeSec);
     app.radio.setNowPlaying(np);
     req.log.info({ title: np.title, artist: np.artist, fallback: np.isFallback }, "now playing");
     return reply.code(204).send();
@@ -68,6 +68,8 @@ export const internalRoutes: FastifyPluginAsync<{ secret: string; musicDir: stri
         isFallback: false,
         isLive: true,
         durationSec: null,
+        airSec: null,
+        loopUrl: null,
       });
       req.log.info("live show started");
     } else {
