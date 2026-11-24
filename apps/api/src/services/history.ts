@@ -42,6 +42,7 @@ export async function recordTrackChange(db: Db, change: TrackChange, musicDir: s
       startedAt: now.toISOString(),
       isFallback: true,
       isLive: false,
+      durationSec: null,
     };
   }
 
@@ -71,6 +72,7 @@ export async function recordTrackChange(db: Db, change: TrackChange, musicDir: s
       startedAt: row.playedAt.toISOString(),
       isFallback: false,
       isLive: false,
+      durationSec: track.durationSec,
     };
   });
 }
@@ -79,7 +81,7 @@ export async function recordTrackChange(db: Db, change: TrackChange, musicDir: s
 export async function recordLiveMetadata(db: Db, title: string, artist: string | null): Promise<NowPlaying> {
   const [row] = await db.insert(playHistory).values({ trackId: null, title, artist, album: null }).returning();
   if (!row) throw new Error("failed to insert play_history row");
-  return { trackId: null, title, artist, album: null, startedAt: row.playedAt.toISOString(), isFallback: false, isLive: true };
+  return { trackId: null, title, artist, album: null, startedAt: row.playedAt.toISOString(), isFallback: false, isLive: true, durationSec: null };
 }
 
 export async function getRecentHistory(db: Db, limit = 10): Promise<HistoryItem[]> {
@@ -98,6 +100,7 @@ export async function getRecentHistory(db: Db, limit = 10): Promise<HistoryItem[
 export async function getLatestNowPlaying(db: Db): Promise<NowPlaying | null> {
   const [last] = await getRecentHistory(db, 1);
   if (!last) return null;
+  const [track] = last.trackId ? await db.select({ d: tracks.durationSec }).from(tracks).where(eq(tracks.id, last.trackId)) : [];
   return {
     trackId: last.trackId,
     title: last.title,
@@ -106,5 +109,6 @@ export async function getLatestNowPlaying(db: Db): Promise<NowPlaying | null> {
     startedAt: last.playedAt,
     isFallback: false,
     isLive: false,
+    durationSec: track?.d ?? null,
   };
 }

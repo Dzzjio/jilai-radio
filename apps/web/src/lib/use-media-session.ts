@@ -4,8 +4,8 @@ import { useEffect } from "react";
 import { useAudio, useLive } from "@/lib/radio-client";
 import { site } from "@/lib/site";
 
-/** Lock screen / headset controls and metadata for the radio stream. */
-export function useMediaSession(): void {
+/** Lock screen / headset controls and metadata for the radio stream. `title` overrides the stream's title. */
+export function useMediaSession(title?: string | null): void {
   const { nowPlaying: np } = useLive();
   const { status, controller } = useAudio();
   const active = status === "playing" || status === "loading";
@@ -23,11 +23,11 @@ export function useMediaSession(): void {
   useEffect(() => {
     if (!("mediaSession" in navigator) || typeof MediaMetadata === "undefined") return;
     navigator.mediaSession.metadata = new MediaMetadata({
-      title: np?.title ?? site.name,
-      artist: np?.artist ?? site.name,
+      title: title ?? np?.title ?? site.name,
+      artist: title ? site.name : (np?.artist ?? site.name),
       album: np?.album ?? site.name,
     });
-  }, [np?.title, np?.artist, np?.album]);
+  }, [title, np?.title, np?.artist, np?.album]);
 
   useEffect(() => {
     if ("mediaSession" in navigator) navigator.mediaSession.playbackState = active ? "playing" : "paused";

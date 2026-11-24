@@ -7,6 +7,8 @@ import { safeJoin } from "../media.js";
 /** What the website gets from GET /appearance. Paths are relative to the API origin. */
 export interface Appearance {
   text: string | null;
+  /** "Now playing" title for the player bar; null = use the stream's own title. */
+  title: string | null;
   background: { kind: "video" | "image"; url: string; poster: string | null } | null;
   updatedAt: string | null;
 }
@@ -14,12 +16,14 @@ export interface Appearance {
 type Row = typeof siteAppearance.$inferSelect;
 
 export const MAX_TEXT_LENGTH = 1000;
+export const MAX_TITLE_LENGTH = 200;
 
 function toAppearance(row: Row | undefined): Appearance {
-  if (!row) return { text: null, background: null, updatedAt: null };
+  if (!row) return { text: null, title: null, background: null, updatedAt: null };
   const kind = row.bgKind === "video" || row.bgKind === "image" ? row.bgKind : null;
   return {
     text: row.text,
+    title: row.title,
     background:
       kind && row.bgFile
         ? { kind, url: `/media/${row.bgFile}`, poster: row.bgPoster ? `/media/${row.bgPoster}` : null }
@@ -49,6 +53,10 @@ async function upsert(db: Db, values: Partial<Omit<Row, "id" | "updatedAt">>): P
 
 export function setText(db: Db, text: string | null): Promise<Appearance> {
   return upsert(db, { text });
+}
+
+export function setTitle(db: Db, title: string | null): Promise<Appearance> {
+  return upsert(db, { title });
 }
 
 /**

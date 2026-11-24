@@ -67,6 +67,7 @@ export const internalRoutes: FastifyPluginAsync<{ secret: string; musicDir: stri
         startedAt: new Date().toISOString(),
         isFallback: false,
         isLive: true,
+        durationSec: null,
       });
       req.log.info("live show started");
     } else {

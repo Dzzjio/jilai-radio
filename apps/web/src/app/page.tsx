@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import { Background, Listeners, SimplePlayer } from "@/components/SimplePlayer";
+import { Background, Listeners, NowPlayingBar } from "@/components/SimplePlayer";
 import s from "@/components/simple.module.css";
 import { loadAppearance } from "@/lib/appearance";
 import { site } from "@/lib/site";
@@ -9,7 +9,7 @@ import { site } from "@/lib/site";
 export const revalidate = 60;
 
 export default async function HomePage() {
-  const { text, background } = await loadAppearance();
+  const { text, title, background } = await loadAppearance();
   return (
     <div className={s.root}>
       <Background {...background} />
@@ -17,7 +17,7 @@ export default async function HomePage() {
       <main className={s.main}>
         <h1 className="sr-only">{site.name}</h1>
         <Suspense>
-          <SimplePlayer />
+          <NowPlayingBar title={title} />
         </Suspense>
         <p className={s.text}>{text}</p>
         <Suspense>

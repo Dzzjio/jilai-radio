@@ -103,6 +103,8 @@ export const siteAppearance = pgTable(
     id: integer("id").primaryKey().default(1),
     /** Plain text block; null = the site's default text. */
     text: text("text"),
+    /** "Now playing" title shown in the player bar; null = the stream's own title. */
+    title: text("title"),
     /** "video" | "image"; null = the site's default background. */
     bgKind: text("bg_kind"),
     /** Filenames inside MEDIA_DIR. */

@@ -42,6 +42,7 @@ function uploadBg(file: string, headers: Record<string, string> = auth()) {
 }
 
 const saveText = (text: string | null) => ctx.app.inject({ method: "PUT", url: "/admin/appearance/text", headers: auth(), payload: { text } });
+const saveTitle = (title: string | null) => ctx.app.inject({ method: "PUT", url: "/admin/appearance/title", headers: auth(), payload: { title } });
 const publicAppearance = async () => (await ctx.app.inject({ url: "/appearance" })).json();
 const pair = (bg: { url: string; poster: string | null }) => [bg.url, bg.poster].filter(Boolean).map((p) => path.basename(p!));
 const filesOnDisk = () => readdirSync(mediaDir).toSorted();
@@ -50,7 +51,7 @@ describe("appearance", () => {
   it("GET /appearance is all null before anything is saved", async () => {
     const res = await ctx.app.inject({ url: "/appearance" });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ text: null, background: null, updatedAt: null });
+    expect(res.json()).toEqual({ text: null, title: null, background: null, updatedAt: null });
   });
 
   it("admin routes need a token", async () => {
@@ -73,6 +74,19 @@ describe("appearance", () => {
 
     expect((await saveText("   ")).json().text).toBeNull();
     expect((await saveText(null)).json().text).toBeNull();
+  });
+
+  it("saves the now-playing title on one line; rejects 201 chars; leaves the text alone", async () => {
+    expect((await ctx.app.inject({ method: "PUT", url: "/admin/appearance/title", payload: { title: "x" } })).statusCode).toBe(401);
+    await saveText("Body");
+    const ok = await saveTitle("  Evening\n  show  ");
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json()).toMatchObject({ title: "Evening show", text: "Body" });
+    expect((await publicAppearance()).title).toBe("Evening show");
+
+    expect((await saveTitle("a".repeat(200))).statusCode).toBe(200);
+    expect((await saveTitle("a".repeat(201))).statusCode).toBe(400);
+    expect((await saveTitle("  ")).json().title).toBeNull();
   });
 
   it("uploads a video: appearance points at new mp4 + poster that exist in MEDIA_DIR", async () => {

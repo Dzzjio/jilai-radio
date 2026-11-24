@@ -1,0 +1,1 @@
+ALTER TABLE "site_appearance" ADD COLUMN "title" text;

@@ -10,7 +10,7 @@ import { z } from "zod";
 import { issueToken, LoginLimiter, safeEqual, verifyToken } from "../auth.js";
 import { playlists, playlistTracks, tracks } from "../db/schema.js";
 import { isMp3, MediaError, placeInMusicDir, probe, processBackground, safeJoin, slugFilename, titleFromFilename, uniqueFilename } from "../media.js";
-import { getAppearance, MAX_TEXT_LENGTH, setBackground, setText } from "../services/appearance.js";
+import { getAppearance, MAX_TEXT_LENGTH, MAX_TITLE_LENGTH, setBackground, setText, setTitle } from "../services/appearance.js";
 import { BroadcastBusyError, type BroadcastSession } from "../services/broadcast.js";
 
 export interface AdminOptions {
@@ -41,6 +41,12 @@ const appearanceText = z
   .strict()
   .transform((b) => (b.text && b.text.trim() ? b.text.trim() : null))
   .refine((t) => t === null || t.length <= MAX_TEXT_LENGTH, `text: at most ${MAX_TEXT_LENGTH} characters`);
+
+const appearanceTitle = z
+  .object({ title: z.string().max(MAX_TITLE_LENGTH * 2).nullable() })
+  .strict()
+  .transform((b) => (b.title && b.title.trim() ? b.title.replace(/\s+/g, " ").trim() : null))
+  .refine((t) => t === null || t.length <= MAX_TITLE_LENGTH, `title: at most ${MAX_TITLE_LENGTH} characters`);
 
 const blank = (v: string | null | undefined) => (v && v.trim() ? v.trim() : null);
 
@@ -308,6 +314,12 @@ export const adminRoutes: FastifyPluginAsync<AdminOptions> = async (app, opts) =
     const body = appearanceText.safeParse(req.body ?? {});
     if (!body.success) return badRequest(reply, body.error);
     return setText(app.db, body.data);
+  });
+
+  app.put("/appearance/title", async (req, reply) => {
+    const body = appearanceTitle.safeParse(req.body ?? {});
+    if (!body.success) return badRequest(reply, body.error);
+    return setTitle(app.db, body.data);
   });
 
   app.post("/appearance/background", async (req, reply) => {

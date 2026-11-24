@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DEFAULT_BACKGROUND, type ResolvedBackground } from "@/lib/appearance";
+import { loopProgress } from "@/lib/loop-progress";
 import { useAudio, useLive } from "@/lib/radio-client";
 import { site } from "@/lib/site";
 import { useMediaSession } from "@/lib/use-media-session";
@@ -62,39 +63,85 @@ function BgVideo({ src, poster, fog }: { src: string; poster: string | null; fog
   );
 }
 
-/** Icon-only play/pause for the stream. */
-export function SimplePlayer() {
+/**
+ * The player bar: play/pause and how far into the track we are (loops with the track).
+ * Above it: the admin's title, if they typed one, and a LIVE badge during a live show.
+ */
+export function NowPlayingBar({ title }: { title: string | null }) {
   const { status, controller } = useAudio();
+  const { nowPlaying: np } = useLive();
   const active = status === "playing" || status === "loading";
-  useMediaSession();
+  const live = np?.isLive ?? false;
+  useMediaSession(title);
+
+  // The fill is a CSS animation as long as the track, started part-way in (negative delay), so it
+  // loops by itself; it is re-synced whenever a new track starts. Set after mount: no clock on the server.
+  const [loop, setLoop] = useState<{ duration: number; delay: number } | null>(null);
+  useEffect(() => {
+    const sync = () => {
+      const p = np && !np.isLive ? loopProgress(np.startedAt, np.durationSec, Date.now()) : null;
+      setLoop(p === null || !np?.durationSec ? null : { duration: np.durationSec, delay: -p * np.durationSec });
+    };
+    sync();
+    // timers sleep in background tabs; re-sync on return so the bar never drifts
+    const wake = () => document.visibilityState === "visible" && sync();
+    document.addEventListener("visibilitychange", wake);
+    return () => document.removeEventListener("visibilitychange", wake);
+  }, [np]);
 
   return (
-    <>
-      <button
-        type="button"
-        className={s.play}
-        onClick={() => controller?.toggle()}
-        aria-pressed={active}
-        aria-busy={status === "loading"}
-        aria-label={active ? `Pause ${site.name}` : `Play ${site.name}`}
-        data-loading={status === "loading" || undefined}
-      >
-        {active ? (
-          <svg aria-hidden="true" width="30" height="30" viewBox="0 0 40 40" fill="currentColor">
-            <rect x="9" y="7" width="8" height="26" />
-            <rect x="23" y="7" width="8" height="26" />
-          </svg>
-        ) : (
-          <svg aria-hidden="true" width="30" height="30" viewBox="0 0 40 40" fill="currentColor">
-            <path d="M13 6 L35 20 L13 34 Z" />
-          </svg>
-        )}
-      </button>
+    <section className={s.bar} aria-label="Now playing">
+      {title || live ? (
+        <p className={s.np}>
+          {live ? (
+            <span className={s.live}>
+              <span className={s.liveDot} aria-hidden="true" />
+              LIVE
+            </span>
+          ) : (
+            <span className={s.label}>Now Playing:</span>
+          )}
+          {title ? <span className={s.title}>{title}</span> : null}
+        </p>
+      ) : null}
+      <div className={s.controls}>
+        <button
+          type="button"
+          className={s.play}
+          onClick={() => controller?.toggle()}
+          aria-pressed={active}
+          aria-busy={status === "loading"}
+          aria-label={active ? `Pause ${site.name}` : `Play ${site.name}`}
+          data-loading={status === "loading" || undefined}
+        >
+          {active ? (
+            <svg aria-hidden="true" width="22" height="22" viewBox="0 0 40 40" fill="currentColor">
+              <rect x="9" y="7" width="8" height="26" />
+              <rect x="23" y="7" width="8" height="26" />
+            </svg>
+          ) : (
+            <svg aria-hidden="true" width="22" height="22" viewBox="0 0 40 40" fill="currentColor">
+              <path d="M11 6 L34 20 L11 34 Z" />
+            </svg>
+          )}
+        </button>
+        <div className={s.track} aria-hidden="true">
+          {live ? (
+            <span className={s.fillLive} />
+          ) : loop ? (
+            <span
+              key={`${np?.startedAt}`}
+              className={s.fill}
+              style={{ animationDuration: `${loop.duration}s`, animationDelay: `${loop.delay}s` }}
+            />
+          ) : null}
+        </div>
+      </div>
       {/* only the error is shown; "connecting" is for screen readers */}
       <p className={status === "error" ? s.error : "sr-only"} role="status" aria-live="polite">
         {statusText[status]}
       </p>
-    </>
+    </section>
   );
 }
 

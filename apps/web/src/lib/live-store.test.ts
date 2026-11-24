@@ -3,7 +3,7 @@ import { applyMessage, createLiveStore, initialLiveState, reconnectDelay } from 
 import type { NowPlaying } from "./types";
 
 const np = (title: string): NowPlaying => ({
-  trackId: 1, title, artist: "A", album: null, startedAt: "2026-01-01T00:00:00.000Z", isFallback: false, isLive: false,
+  trackId: 1, title, artist: "A", album: null, startedAt: "2026-01-01T00:00:00.000Z", isFallback: false, isLive: false, durationSec: null,
 });
 const hist = (title: string) => [{ id: 1, trackId: 1, title, artist: "A", album: null, playedAt: "2026-01-01T00:00:00.000Z" }];
 

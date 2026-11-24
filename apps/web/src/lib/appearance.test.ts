@@ -5,15 +5,17 @@ import type { Appearance } from "./types";
 const API = "https://api.example.org";
 const video: Appearance = {
   text: "Hello",
+  title: "Show — Rustaveli",
   background: { kind: "video", url: "/media/bg-1.mp4", poster: "/media/bg-1-poster.jpg" },
   updatedAt: "2026-11-22T12:00:00.000Z",
 };
 
 describe("resolveAppearance", () => {
   it("resolveAppearance(null) → defaults", () => {
-    expect(resolveAppearance(null, API)).toEqual({ text: DEFAULT_TEXT, background: DEFAULT_BACKGROUND });
-    expect(resolveAppearance({ text: null, background: null, updatedAt: null }, API)).toEqual({
+    expect(resolveAppearance(null, API)).toEqual({ text: DEFAULT_TEXT, title: null, background: DEFAULT_BACKGROUND });
+    expect(resolveAppearance({ text: null, title: null, background: null, updatedAt: null }, API)).toEqual({
       text: DEFAULT_TEXT,
+      title: null,
       background: DEFAULT_BACKGROUND,
     });
   });
@@ -21,6 +23,7 @@ describe("resolveAppearance", () => {
   it("maps video paths to absolute API URLs", () => {
     expect(resolveAppearance(video, API)).toEqual({
       text: "Hello",
+      title: "Show — Rustaveli",
       background: { kind: "video", src: `${API}/media/bg-1.mp4`, poster: `${API}/media/bg-1-poster.jpg` },
     });
   });
@@ -39,12 +42,13 @@ describe("loadAppearance", () => {
   it("returns the saved appearance", async () => {
     const r = await loadAppearance({ fetchImpl: ok(), building: false });
     expect(r.text).toBe("Hello");
+    expect(r.title).toBe("Show — Rustaveli");
     expect(r.background.kind).toBe("video");
   });
 
   it("loadAppearance falls back to defaults while building when fetch fails", async () => {
-    expect(await loadAppearance({ fetchImpl: down(), building: true })).toEqual({ text: DEFAULT_TEXT, background: DEFAULT_BACKGROUND });
-    expect(await loadAppearance({ fetchImpl: error500(), building: true })).toEqual({ text: DEFAULT_TEXT, background: DEFAULT_BACKGROUND });
+    expect(await loadAppearance({ fetchImpl: down(), building: true })).toEqual({ text: DEFAULT_TEXT, title: null, background: DEFAULT_BACKGROUND });
+    expect(await loadAppearance({ fetchImpl: error500(), building: true })).toEqual({ text: DEFAULT_TEXT, title: null, background: DEFAULT_BACKGROUND });
   });
 
   it("loadAppearance throws at runtime when fetch fails", async () => {

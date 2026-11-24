@@ -64,10 +64,10 @@ describe("internal live endpoints", () => {
   it("going live shows LIVE now playing; DJ titles go to history", async () => {
     await post("/internal/live", { live: true });
     let np = (await ctx.app.inject("/now-playing")).json().nowPlaying;
-    expect(np).toMatchObject({ isLive: true, title: "Live show" });
+    expect(np).toMatchObject({ isLive: true, title: "Live show", durationSec: null });
     await post("/internal/track-changed", { title: "Friday Session", artist: "Nika", live: true });
     np = (await ctx.app.inject("/now-playing")).json().nowPlaying;
-    expect(np).toMatchObject({ isLive: true, title: "Friday Session", artist: "Nika", trackId: null });
+    expect(np).toMatchObject({ isLive: true, title: "Friday Session", artist: "Nika", trackId: null, durationSec: null });
     expect((await ctx.app.inject("/history")).json().items[0]).toMatchObject({ title: "Friday Session", trackId: null });
     // empty metadata during live is ignored
     await post("/internal/track-changed", { title: "", live: true });

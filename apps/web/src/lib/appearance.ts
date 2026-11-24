@@ -16,6 +16,8 @@ export const DEFAULT_BACKGROUND: ResolvedBackground = { kind: "video", src: "/bg
 
 export interface ResolvedAppearance {
   text: string;
+  /** The admin's "now playing" title; null = show the stream's own title. */
+  title: string | null;
   background: ResolvedBackground;
 }
 
@@ -24,6 +26,7 @@ export function resolveAppearance(raw: Appearance | null, apiUrl: string): Resol
   const bg = raw?.background;
   return {
     text: raw?.text ?? DEFAULT_TEXT,
+    title: raw?.title ?? null,
     background: bg
       ? { kind: bg.kind, src: `${apiUrl}${bg.url}`, poster: bg.poster ? `${apiUrl}${bg.poster}` : null }
       : DEFAULT_BACKGROUND,

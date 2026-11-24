@@ -10,6 +10,8 @@ export interface NowPlaying {
   isFallback: boolean;
   /** True while a live show is on air. */
   isLive: boolean;
+  /** Length of the track on air, when known (null while live or for the fallback). */
+  durationSec: number | null;
 }
 
 export interface HistoryItem {

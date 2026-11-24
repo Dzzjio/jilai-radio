@@ -9,6 +9,8 @@ export interface NowPlaying {
   isFallback: boolean;
   /** True while the DJ is broadcasting live. */
   isLive: boolean;
+  /** Length of the track on air, when known (null while live or for the fallback). */
+  durationSec: number | null;
 }
 
 export interface HistoryItem {
@@ -28,6 +30,8 @@ export type ServerMessage =
 /** GET /appearance: the home page look set in admin. Paths are relative to the API origin. */
 export interface Appearance {
   text: string | null;
+  /** "Now playing" title for the player bar; null = the stream's own title. */
+  title: string | null;
   background: { kind: "video" | "image"; url: string; poster: string | null } | null;
   updatedAt: string | null;
 }

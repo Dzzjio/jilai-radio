@@ -155,12 +155,15 @@ function Dashboard({ onExpired }: { onExpired: () => void }) {
 
 /* ---------------- home page look ---------------- */
 const MAX_TEXT = 1000;
+const MAX_TITLE = 200;
 const apiSrc = (p: string) => `${config.apiUrl}${p}`;
 
 function Look({ onError }: { onError: (err: unknown) => void }) {
   const [look, setLook] = useState<Appearance | null>(null);
   const [text, setText] = useState("");
   const [textState, setTextState] = useState<"idle" | "saving" | "saved">("idle");
+  const [title, setTitle] = useState("");
+  const [titleState, setTitleState] = useState<"idle" | "saving" | "saved">("idle");
   const [upload, setUpload] = useState<{ state: "idle" | "uploading" | "processing" | "done" | "error"; progress: number; detail: string }>({
     state: "idle",
     progress: 0,
@@ -174,6 +177,7 @@ function Look({ onError }: { onError: (err: unknown) => void }) {
       if (!alive) return;
       setLook(a);
       setText(a.text ?? "");
+      setTitle(a.title ?? "");
     }, onError);
     return () => {
       alive = false;
@@ -190,6 +194,20 @@ function Look({ onError }: { onError: (err: unknown) => void }) {
       setTextState("saved");
     } catch (err) {
       setTextState("idle");
+      onError(err);
+    }
+  }
+
+  async function saveTitle(e: FormEvent) {
+    e.preventDefault();
+    setTitleState("saving");
+    try {
+      const a = await adminApi.saveTitle(title.trim() ? title : null);
+      setLook(a);
+      setTitle(a.title ?? "");
+      setTitleState("saved");
+    } catch (err) {
+      setTitleState("idle");
       onError(err);
     }
   }
@@ -225,6 +243,32 @@ function Look({ onError }: { onError: (err: unknown) => void }) {
         HOME PAGE LOOK
       </h2>
       <p className={s.note}>The background and the text on the home page. Changes show up on the site within a minute.</p>
+
+      <form className={s.lookText} onSubmit={saveTitle}>
+        <label htmlFor="look-title" className={s.label}>
+          NOW PLAYING TITLE
+        </label>
+        <input
+          id="look-title"
+          className={s.input}
+          value={title}
+          maxLength={MAX_TITLE}
+          placeholder="Empty = the title of the track on air"
+          onChange={(e) => {
+            setTitle(e.currentTarget.value);
+            setTitleState("idle");
+          }}
+        />
+        <div className={s.row}>
+          <button type="submit" className={s.btnSolid} disabled={titleState === "saving" || look === null}>
+            {titleState === "saving" ? "SAVING…" : "SAVE TITLE"}
+          </button>
+          <span className={s.note} aria-live="polite">
+            {title.length} / {MAX_TITLE}
+            {titleState === "saved" ? " · saved" : ""}
+          </span>
+        </div>
+      </form>
 
       <form className={s.lookText} onSubmit={saveText}>
         <label htmlFor="look-text" className={s.label}>

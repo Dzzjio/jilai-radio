@@ -129,6 +129,8 @@ describe("track edit, delete, scan", () => {
   it("deletes the file and the row, keeping play history", async () => {
     const t = (await upload("night-set.mp3")).json();
     await ctx.app.inject({ method: "POST", url: "/internal/track-changed", headers: { "x-internal-secret": SECRET }, payload: { title: "Night Set", filename: `/music/${t.filename}` } });
+    // the player bar gets the track's length so it can show progress
+    expect((await ctx.app.inject("/now-playing")).json().nowPlaying).toMatchObject({ trackId: t.id, durationSec: 3, isLive: false });
     const del = await ctx.app.inject({ method: "DELETE", url: `/admin/tracks/${t.id}`, headers: auth() });
     expect(del.statusCode).toBe(204);
     expect(readdirSync(musicDir)).toEqual([]);

@@ -124,6 +124,7 @@ export const adminApi = {
   // ---- site appearance (home page background + text) ----
   appearance: () => request<Appearance>("GET", "/admin/appearance"),
   saveText: (text: string | null) => request<Appearance>("PUT", "/admin/appearance/text", { text }),
+  saveTitle: (title: string | null) => request<Appearance>("PUT", "/admin/appearance/title", { title }),
   /** Upload a background video or photo; the server processes it before answering. */
   uploadBackground: (file: File, onProgress: (fraction: number) => void) =>
     xhrUpload<Appearance>("/admin/appearance/background", file, onProgress),
