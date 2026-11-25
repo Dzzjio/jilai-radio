@@ -3,6 +3,7 @@ import { createAudioController, type AudioController, type AudioState } from "./
 import { createWebAudioGraph, type WebAudioGraph } from "./audio-graph";
 import type { VizMode } from "./viz/draw";
 import { config } from "./config";
+import { attachHls } from "./hls-attach";
 import { createLiveStore, initialLiveState, type LiveState, type LiveStore } from "./live-store";
 
 // One live connection and one audio element per browser tab, shared by every
@@ -35,6 +36,7 @@ export function getAudio(): AudioController {
     streamUrl: config.streamUrl,
     storage: safeLocalStorage(),
     connectGraph: (el) => getAudioGraph().connect(el),
+    attachHls,
   });
   return audio;
 }

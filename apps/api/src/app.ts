@@ -1,5 +1,6 @@
 import Fastify, { type FastifyServerOptions } from "fastify";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
+import path from "node:path";
 import cors from "@fastify/cors";
 import fastifyStatic from "@fastify/static";
 import websocket from "@fastify/websocket";
@@ -9,6 +10,7 @@ import { adminRoutes } from "./routes/admin.js";
 import { internalRoutes } from "./routes/internal.js";
 import { publicRoutes } from "./routes/public.js";
 import { LiveBroadcast } from "./services/broadcast.js";
+import { currentShowPlaylist } from "./services/hls.js";
 import { LiveService } from "./services/live.js";
 import { RadioState } from "./state.js";
 import { wsRoutes } from "./ws.js";
@@ -76,6 +78,30 @@ export async function buildApp({ env, db, radio = new RadioState(), broadcast, l
     dotfiles: "deny",
     immutable: true,
     maxAge: "365d",
+  });
+
+  // Live rewind: Liquidsoap writes the show as HLS chunks here while live. The playlists change
+  // every few seconds (never cache); a chunk never changes once written.
+  const hlsDir = path.resolve(env.RECORDINGS_DIR, "hls");
+  await mkdir(hlsDir, { recursive: true }).catch(() => {});
+  await app.register(fastifyStatic, {
+    root: hlsDir,
+    prefix: "/hls/",
+    decorateReply: false,
+    index: false,
+    list: false,
+    dotfiles: "deny",
+    cacheControl: false,
+    setHeaders: (reply, file) => {
+      reply.header("Cache-Control", file.endsWith(".m3u8") ? "no-store" : "public, max-age=86400");
+    },
+  });
+
+  // The current show only (see services/hls.ts): what the website plays during a show.
+  app.get("/hls/show.m3u8", async (_req, reply) => {
+    const text = await readFile(path.join(hlsDir, "aac.m3u8"), "utf8").catch(() => null);
+    if (text === null) return reply.code(404).send({ error: "no live show" });
+    return reply.header("Cache-Control", "no-store").type("application/vnd.apple.mpegurl").send(currentShowPlaylist(text));
   });
 
   await app.register(publicRoutes, { musicDir: env.MUSIC_DIR });

@@ -10,6 +10,12 @@ class FakeAudio {
   duration = Number.NaN;
   loop = false;
   readyState = 0;
+  /** Live window [start, end] the fake reports as seekable (null = nothing yet). */
+  window: [number, number] | null = null;
+  get seekable() {
+    const w = this.window;
+    return { length: w ? 1 : 0, start: () => w![0], end: () => w![1] };
+  }
   #volume = 1;
   readOnlyVolume = false;
   playResult: () => Promise<void> = () => Promise.resolve();
@@ -32,7 +38,7 @@ function memoryStorage(init: Record<string, string> = {}) {
   return { data, getItem: (k: string) => data[k] ?? null, setItem: (k: string, v: string) => void (data[k] = v) };
 }
 
-function setup(opts: { readOnlyVolume?: boolean; storage?: ReturnType<typeof memoryStorage>; connectGraph?: (el: never) => { setGain(v: number): void; resume(): void } } = {}) {
+function setup(opts: { readOnlyVolume?: boolean; storage?: ReturnType<typeof memoryStorage>; connectGraph?: (el: never) => { setGain(v: number): void; resume(): void }; attachHls?: never } = {}) {
   const el = new FakeAudio();
   el.readOnlyVolume = opts.readOnlyVolume ?? false;
   const timers: { fn: () => void; ms: number; cleared: boolean }[] = [];
@@ -46,6 +52,7 @@ function setup(opts: { readOnlyVolume?: boolean; storage?: ReturnType<typeof mem
     setTimer: (fn, ms) => { const timer = { fn, ms, cleared: false }; timers.push(timer); return timer; },
     clearTimer: (h) => { (h as { cleared: boolean }).cleared = true; },
     connectGraph: opts.connectGraph as never,
+    attachHls: opts.attachHls,
   });
   return { el, ctrl, timers, storage };
 }
@@ -278,6 +285,116 @@ describe("loop file mode", () => {
     ctrl.useLoop(loopSrc(10));
     expect(el.played).toHaveLength(1);
     expect(el.currentTime).toBe(200);
+  });
+});
+
+/** A stand-in for hls.js: records attaches, lets the test fail them or say "unsupported". */
+function fakeHls(supported = true) {
+  const f = {
+    attached: [] as string[],
+    destroyed: 0,
+    fatal: null as null | (() => void),
+    sync: null as number | null,
+    attach: (el: FakeAudio, url: string, onFatal: () => void) => {
+      f.attached.push(url);
+      f.fatal = onFatal;
+      if (!supported) return Promise.resolve(null);
+      el.src = `blob:${url}`;
+      return Promise.resolve({ destroy: () => void f.destroyed++, liveSyncPosition: () => f.sync });
+    },
+  };
+  return f;
+}
+const LIVE = "https://api.example.com/hls/live.m3u8";
+
+describe("live (HLS) mode", () => {
+  it("plays the live playlist; pause holds the place; seek rewinds; goLive jumps back", async () => {
+    const h = fakeHls();
+    const { el, ctrl } = setup({ attachHls: h.attach as never });
+    ctrl.useSources({ hls: LIVE, loop: null });
+    ctrl.play();
+    await flush();
+    expect(h.attached).toEqual([LIVE]);
+    expect(el.played).toEqual([`blob:${LIVE}`]);
+    el.fire("playing");
+
+    // 10 minutes of show kept; listener at live (12 s behind the newest chunk)
+    el.window = [100, 700];
+    el.currentTime = 688;
+    expect(ctrl.position()).toEqual({ current: 588, duration: 600, behind: 12 });
+
+    ctrl.seek(60); // a minute into the show
+    expect(el.currentTime).toBe(160);
+    ctrl.pause();
+    expect(el.src).toBe(`blob:${LIVE}`); // still attached: resumes from here
+    expect(ctrl.position()?.behind).toBe(540);
+
+    h.sync = 690;
+    ctrl.goLive();
+    expect(el.currentTime).toBe(690);
+    expect(ctrl.getState().status).toBe("loading");
+    expect(h.attached).toHaveLength(1); // same playlist, no re-attach
+  });
+
+  it("without hls.js's sync point, goLive goes to 12 s before the newest audio", async () => {
+    const h = fakeHls();
+    const { el, ctrl } = setup({ attachHls: h.attach as never });
+    ctrl.useSources({ hls: LIVE, loop: null });
+    ctrl.play();
+    await flush();
+    el.window = [0, 300];
+    el.currentTime = 50;
+    ctrl.goLive();
+    expect(el.currentTime).toBe(288);
+  });
+
+  it("a browser without Media Source plays the plain stream (live, no rewind)", async () => {
+    const h = fakeHls(false);
+    const { el, ctrl } = setup({ attachHls: h.attach as never });
+    ctrl.useSources({ hls: LIVE, loop: null });
+    ctrl.play();
+    await flush();
+    expect(el.src).toMatch(/^https:\/\/api\.example\.com\/stream\?t=\d+$/);
+    expect(ctrl.position()).toBeNull();
+    ctrl.seek(10);
+    expect(el.currentTime).toBe(0);
+  });
+
+  it("a fatal player error retries the playlist (e.g. right at the start, before the first chunk)", async () => {
+    const h = fakeHls();
+    const { ctrl, timers } = setup({ attachHls: h.attach as never });
+    ctrl.useSources({ hls: LIVE, loop: null });
+    ctrl.play();
+    await flush();
+    h.fatal!();
+    expect(h.destroyed).toBe(1);
+    expect(ctrl.getState().status).toBe("loading");
+    timers.at(-1)!.fn();
+    await flush();
+    expect(h.attached).toEqual([LIVE, LIVE]);
+  });
+
+  it("show ends while listening: switches to the recording on repeat", async () => {
+    const h = fakeHls();
+    const { el, ctrl } = setup({ attachHls: h.attach as never });
+    ctrl.useSources({ hls: LIVE, loop: null });
+    ctrl.play();
+    await flush();
+    ctrl.useSources({ hls: null, loop: loopSrc(0) });
+    expect(h.destroyed).toBe(1);
+    expect(el.src).toBe("https://api.example.com/loop/7.mp3");
+  });
+
+  it("a show starting while the recording plays switches to the live playlist", async () => {
+    const h = fakeHls();
+    const { el, ctrl } = setup({ attachHls: h.attach as never });
+    ctrl.useLoop(loopSrc());
+    ctrl.play();
+    loaded(el);
+    ctrl.useSources({ hls: LIVE, loop: null });
+    await flush();
+    expect(h.attached).toEqual([LIVE]);
+    expect(el.loop).toBe(false);
   });
 });
 
