@@ -1,0 +1,1 @@
+ALTER TABLE "site_appearance" ADD COLUMN "bg_focus_x" integer;

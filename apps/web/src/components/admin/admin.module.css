@@ -319,11 +319,42 @@
   overflow: hidden;
 }
 .lookPreview img,
-.lookPreview video {
+.lookPreview video,
+.lookPhone img,
+.lookPhone video {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+/* the landscape preview and, beside it, what a phone (iPhone-ish 393 × 852) shows */
+.lookPreviews {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+.lookPreviews .lookPreview {
+  min-width: 0;
+  flex: 0 1 360px;
+}
+.lookPhone {
+  flex: none;
+  height: min(202px, calc((100vw - 64px) * 0.5));
+  aspect-ratio: 393 / 852;
+  border: 1.5px solid var(--ink);
+  border-radius: 10px;
+  background: #5f6669;
+  overflow: hidden;
+}
+.lookFocus {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 480px;
+}
+.lookFocus input[type="range"] {
+  width: 100%;
+  accent-color: var(--ink);
 }
 
 /* live desk */

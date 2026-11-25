@@ -128,6 +128,8 @@ export const adminApi = {
   /** Upload a background video or photo; the server processes it before answering. */
   uploadBackground: (file: File, onProgress: (fraction: number) => void) =>
     xhrUpload<Appearance>("/admin/appearance/background", file, onProgress),
+  /** Where phones (portrait screens) aim their crop of the uploaded background, 0..100. */
+  saveBackgroundFocus: (focusX: number) => request<Appearance>("PUT", "/admin/appearance/background/focus", { focusX }),
   resetBackground: () => request<Appearance>("DELETE", "/admin/appearance/background"),
 };
 

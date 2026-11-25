@@ -4,6 +4,7 @@ import Link from "next/link";
 import { type DragEvent, type FormEvent, useCallback, useEffect, useState } from "react";
 import { AdminError, type AdminTrack, adminApi, formatDuration, formatSize, tokenStore } from "@/lib/admin-api";
 import { config } from "@/lib/config";
+import { DEFAULT_BACKGROUND } from "@/lib/appearance";
 import type { Appearance } from "@/lib/types";
 import { ThemeToggle } from "../ThemeToggle";
 import s from "./admin.module.css";
@@ -164,6 +165,8 @@ function Look({ onError }: { onError: (err: unknown) => void }) {
   const [textState, setTextState] = useState<"idle" | "saving" | "saved">("idle");
   const [title, setTitle] = useState("");
   const [titleState, setTitleState] = useState<"idle" | "saving" | "saved">("idle");
+  const [focus, setFocus] = useState(50);
+  const [focusState, setFocusState] = useState<"idle" | "saving" | "saved">("idle");
   const [upload, setUpload] = useState<{ state: "idle" | "uploading" | "processing" | "done" | "error"; progress: number; detail: string }>({
     state: "idle",
     progress: 0,
@@ -178,6 +181,7 @@ function Look({ onError }: { onError: (err: unknown) => void }) {
       setLook(a);
       setText(a.text ?? "");
       setTitle(a.title ?? "");
+      setFocus(a.background?.focusX ?? 50);
     }, onError);
     return () => {
       alive = false;
@@ -219,10 +223,26 @@ function Look({ onError }: { onError: (err: unknown) => void }) {
         setUpload({ state: progress >= 1 ? "processing" : "uploading", progress, detail: "" }),
       );
       setLook(a);
+      setFocus(a.background?.focusX ?? 50);
+      setFocusState("idle");
       setUpload({ state: "done", progress: 1, detail: "Saved. The site updates within a minute." });
     } catch (err) {
       if (err instanceof AdminError && err.status === 401) return onError(err);
       setUpload({ state: "error", progress: 0, detail: message(err) });
+    }
+  }
+
+  async function saveFocus(e: FormEvent) {
+    e.preventDefault();
+    setFocusState("saving");
+    try {
+      const a = await adminApi.saveBackgroundFocus(focus);
+      setLook(a);
+      setFocus(a.background?.focusX ?? 50);
+      setFocusState("saved");
+    } catch (err) {
+      setFocusState("idle");
+      onError(err);
     }
   }
 
@@ -236,6 +256,10 @@ function Look({ onError }: { onError: (err: unknown) => void }) {
   }
 
   const bg = look?.background;
+  // What a phone shows: the uploaded background at the chosen focus, or the default fog at its fixed one.
+  const phone = bg
+    ? { kind: bg.kind, src: apiSrc(bg.url), poster: bg.poster ? apiSrc(bg.poster) : undefined, x: focus }
+    : { kind: "video" as const, src: DEFAULT_BACKGROUND.src, poster: DEFAULT_BACKGROUND.poster ?? undefined, x: DEFAULT_BACKGROUND.focusX };
 
   return (
     <section className={s.section} aria-labelledby="look-h">
@@ -299,16 +323,55 @@ function Look({ onError }: { onError: (err: unknown) => void }) {
 
       <div className={s.lookBg}>
         <span className={s.label}>BACKGROUND</span>
-        <div className={s.lookPreview}>
-          {bg?.kind === "image" ? (
-            // eslint-disable-next-line @next/next/no-img-element -- small admin preview from our API
-            <img src={apiSrc(bg.url)} alt="Current background" />
-          ) : bg?.kind === "video" ? (
-            <video src={apiSrc(bg.url)} poster={bg.poster ? apiSrc(bg.poster) : undefined} muted loop playsInline autoPlay aria-label="Current background video" />
-          ) : (
-            <video src="/bg.mp4" poster="/bg.jpg" muted loop playsInline autoPlay aria-label="Default fog background video" />
-          )}
+        <div className={s.lookPreviews}>
+          <div className={s.lookPreview}>
+            {bg?.kind === "image" ? (
+              // eslint-disable-next-line @next/next/no-img-element -- small admin preview from our API
+              <img src={apiSrc(bg.url)} alt="Current background" />
+            ) : bg?.kind === "video" ? (
+              <video src={apiSrc(bg.url)} poster={bg.poster ? apiSrc(bg.poster) : undefined} muted loop playsInline autoPlay aria-label="Current background video" />
+            ) : (
+              <video src="/bg.mp4" poster="/bg.jpg" muted loop playsInline autoPlay aria-label="Default fog background video" />
+            )}
+          </div>
+          <div className={s.lookPhone} aria-hidden="true">
+            {phone.kind === "image" ? (
+              // eslint-disable-next-line @next/next/no-img-element -- small admin preview from our API
+              <img src={phone.src} alt="" style={{ objectPosition: `${phone.x}% 50%` }} />
+            ) : (
+              <video src={phone.src} poster={phone.poster} muted loop playsInline autoPlay style={{ objectPosition: `${phone.x}% 50%` }} />
+            )}
+          </div>
         </div>
+        {bg ? (
+          <form className={s.lookFocus} onSubmit={saveFocus}>
+            <label htmlFor="look-focus" className={s.label}>
+              PHONE FOCUS
+            </label>
+            <p className={s.note}>Phones show only a narrow slice of the picture. Slide to choose which part, then save.</p>
+            <input
+              id="look-focus"
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={focus}
+              onChange={(e) => {
+                setFocus(Number(e.currentTarget.value));
+                setFocusState("idle");
+              }}
+            />
+            <div className={s.row}>
+              <button type="submit" className={s.btnSolid} disabled={focusState === "saving" || focus === bg.focusX}>
+                {focusState === "saving" ? "SAVING…" : "SAVE FOCUS"}
+              </button>
+              <span className={s.note} aria-live="polite">
+                {focus === 0 ? "left edge" : focus === 100 ? "right edge" : focus === 50 ? "centre" : `${focus} % from the left`}
+                {focusState === "saved" ? " · saved" : ""}
+              </span>
+            </div>
+          </form>
+        ) : null}
         <p className={s.note}>
           {bg ? (bg.kind === "video" ? "Your video." : "Your photo.") : "The default fog video."} Upload a video (up to 60 seconds) or a
           photo to replace it. Videos lose their sound and get resized for the web.

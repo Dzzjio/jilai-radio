@@ -36,6 +36,7 @@ export interface Appearance {
   text: string | null;
   /** "Now playing" title for the player bar; null = the stream's own title. */
   title: string | null;
-  background: { kind: "video" | "image"; url: string; poster: string | null } | null;
+  /** focusX: where portrait screens aim their crop, 0 (left) .. 100 (right). */
+  background: { kind: "video" | "image"; url: string; poster: string | null; focusX: number } | null;
   updatedAt: string | null;
 }

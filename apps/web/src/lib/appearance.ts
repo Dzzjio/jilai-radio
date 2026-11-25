@@ -9,10 +9,14 @@ export interface ResolvedBackground {
   kind: "video" | "image";
   src: string;
   poster: string | null;
+  /** Portrait screens crop the sides: where they aim, 0 (left edge) .. 100 (right edge). */
+  focusX: number;
 }
 
-/** The fog loop bundled with the site (apps/web/public). */
-export const DEFAULT_BACKGROUND: ResolvedBackground = { kind: "video", src: "/bg.mp4", poster: "/bg.jpg" };
+/** The fog loop bundled with the site (apps/web/public). Phones keep its misty hill, right of centre, in view. */
+export const DEFAULT_BACKGROUND: ResolvedBackground = { kind: "video", src: "/bg.mp4", poster: "/bg.jpg", focusX: 68 };
+
+const clampFocus = (x: unknown) => (typeof x === "number" && Number.isFinite(x) ? Math.min(100, Math.max(0, x)) : 50);
 
 export interface ResolvedAppearance {
   text: string;
@@ -28,7 +32,12 @@ export function resolveAppearance(raw: Appearance | null, apiUrl: string): Resol
     text: raw?.text ?? DEFAULT_TEXT,
     title: raw?.title ?? null,
     background: bg
-      ? { kind: bg.kind, src: `${apiUrl}${bg.url}`, poster: bg.poster ? `${apiUrl}${bg.poster}` : null }
+      ? {
+          kind: bg.kind,
+          src: `${apiUrl}${bg.url}`,
+          poster: bg.poster ? `${apiUrl}${bg.poster}` : null,
+          focusX: clampFocus(bg.focusX),
+        }
       : DEFAULT_BACKGROUND,
   };
 }

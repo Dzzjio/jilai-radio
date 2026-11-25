@@ -24,11 +24,11 @@
   pointer-events: none;
 }
 
-/* Portrait screens crop the sides: for the default fog video, keep the misty hill (right of centre)
-   in view. The admin's own backgrounds stay centred. */
+/* Portrait screens crop the sides: aim at the background's focus point (set per picture in admin,
+   passed in as --focus-x) so its subject stays in view. */
 @media (orientation: portrait) {
-  .bgFog {
-    object-position: 68% 50%;
+  .bg {
+    object-position: var(--focus-x, 50%) 50%;
   }
 }
 
@@ -99,9 +99,15 @@
   overflow: hidden;
 }
 
+/* LIVE: a button. Red at live; grey when rewound (click → back to live). */
 .live {
   flex: none;
   align-self: center;
+  margin: 0;
+  border: 0;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.2s;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -112,6 +118,24 @@
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.1em;
+}
+
+.live:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+.liveBehind {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.liveBehind:hover {
+  background: #d81e3c;
+}
+
+.liveBehind .liveDot {
+  animation: none;
+  opacity: 0.6;
 }
 
 .liveDot {

@@ -110,6 +110,8 @@ export const siteAppearance = pgTable(
     /** Filenames inside MEDIA_DIR. */
     bgFile: text("bg_file"),
     bgPoster: text("bg_poster"),
+    /** Where portrait screens aim their crop of the background, 0 (left edge) .. 100 (right edge); null = centre. */
+    bgFocusX: integer("bg_focus_x"),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [check("site_appearance_single_row", sql`${t.id} = 1`)],

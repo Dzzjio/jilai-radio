@@ -6,7 +6,7 @@ const API = "https://api.example.org";
 const video: Appearance = {
   text: "Hello",
   title: "Show — Rustaveli",
-  background: { kind: "video", url: "/media/bg-1.mp4", poster: "/media/bg-1-poster.jpg" },
+  background: { kind: "video", url: "/media/bg-1.mp4", poster: "/media/bg-1-poster.jpg", focusX: 20 },
   updatedAt: "2026-11-22T12:00:00.000Z",
 };
 
@@ -24,13 +24,20 @@ describe("resolveAppearance", () => {
     expect(resolveAppearance(video, API)).toEqual({
       text: "Hello",
       title: "Show — Rustaveli",
-      background: { kind: "video", src: `${API}/media/bg-1.mp4`, poster: `${API}/media/bg-1-poster.jpg` },
+      background: { kind: "video", src: `${API}/media/bg-1.mp4`, poster: `${API}/media/bg-1-poster.jpg`, focusX: 20 },
     });
   });
 
   it("image background keeps poster null", () => {
-    const r = resolveAppearance({ ...video, background: { kind: "image", url: "/media/bg-2.jpg", poster: null } }, API);
-    expect(r.background).toEqual({ kind: "image", src: `${API}/media/bg-2.jpg`, poster: null });
+    const r = resolveAppearance({ ...video, background: { kind: "image", url: "/media/bg-2.jpg", poster: null, focusX: 50 } }, API);
+    expect(r.background).toEqual({ kind: "image", src: `${API}/media/bg-2.jpg`, poster: null, focusX: 50 });
+  });
+
+  it("an older API without focusX → centred; out-of-range values are clamped", () => {
+    const old = { kind: "image", url: "/media/bg-2.jpg", poster: null } as unknown as NonNullable<Appearance["background"]>;
+    expect(resolveAppearance({ ...video, background: old }, API).background.focusX).toBe(50);
+    expect(resolveAppearance({ ...video, background: { ...old, focusX: 140 } }, API).background.focusX).toBe(100);
+    expect(resolveAppearance({ ...video, background: { ...old, focusX: -3 } }, API).background.focusX).toBe(0);
   });
 });
 

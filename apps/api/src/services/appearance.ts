@@ -9,7 +9,8 @@ export interface Appearance {
   text: string | null;
   /** "Now playing" title for the player bar; null = use the stream's own title. */
   title: string | null;
-  background: { kind: "video" | "image"; url: string; poster: string | null } | null;
+  /** focusX: where portrait screens aim their crop, 0 (left) .. 100 (right). */
+  background: { kind: "video" | "image"; url: string; poster: string | null; focusX: number } | null;
   updatedAt: string | null;
 }
 
@@ -17,6 +18,7 @@ type Row = typeof siteAppearance.$inferSelect;
 
 export const MAX_TEXT_LENGTH = 1000;
 export const MAX_TITLE_LENGTH = 200;
+export const DEFAULT_FOCUS_X = 50;
 
 function toAppearance(row: Row | undefined): Appearance {
   if (!row) return { text: null, title: null, background: null, updatedAt: null };
@@ -26,7 +28,12 @@ function toAppearance(row: Row | undefined): Appearance {
     title: row.title,
     background:
       kind && row.bgFile
-        ? { kind, url: `/media/${row.bgFile}`, poster: row.bgPoster ? `/media/${row.bgPoster}` : null }
+        ? {
+            kind,
+            url: `/media/${row.bgFile}`,
+            poster: row.bgPoster ? `/media/${row.bgPoster}` : null,
+            focusX: row.bgFocusX ?? DEFAULT_FOCUS_X,
+          }
         : null,
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -59,6 +66,13 @@ export function setTitle(db: Db, title: string | null): Promise<Appearance> {
   return upsert(db, { title });
 }
 
+/** Aims the portrait crop of the current background; null when there is no uploaded background. */
+export async function setBackgroundFocus(db: Db, focusX: number): Promise<Appearance | null> {
+  const row = await readRow(db);
+  if (!row?.bgFile) return null;
+  return upsert(db, { bgFocusX: focusX });
+}
+
 /**
  * Points the site at a new background (null = default).
  * Keeps the files of the background it replaces: pages Vercel cached before this change still
@@ -70,7 +84,12 @@ export async function setBackground(
   bg: { kind: "video" | "image"; file: string; poster: string | null } | null,
 ): Promise<Appearance> {
   const previous = await readRow(db);
-  const result = await upsert(db, { bgKind: bg?.kind ?? null, bgFile: bg?.file ?? null, bgPoster: bg?.poster ?? null });
+  const result = await upsert(db, {
+    bgKind: bg?.kind ?? null,
+    bgFile: bg?.file ?? null,
+    bgPoster: bg?.poster ?? null,
+    bgFocusX: null, // a new picture starts centred
+  });
   const keep = new Set([bg?.file, bg?.poster, previous?.bgFile, previous?.bgPoster].filter((f): f is string => !!f));
   const stale = (await readdir(mediaDir).catch(() => [] as string[])).filter((f) => f.startsWith("bg-") && !keep.has(f));
   await Promise.all(stale.map((f) => unlink(safeJoin(mediaDir, f)).catch(() => {})));

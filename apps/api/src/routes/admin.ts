@@ -10,7 +10,7 @@ import { z } from "zod";
 import { issueToken, LoginLimiter, safeEqual, verifyToken } from "../auth.js";
 import { playlists, playlistTracks, tracks } from "../db/schema.js";
 import { isMp3, MediaError, placeInMusicDir, probe, processBackground, safeJoin, slugFilename, titleFromFilename, uniqueFilename } from "../media.js";
-import { getAppearance, MAX_TEXT_LENGTH, MAX_TITLE_LENGTH, setBackground, setText, setTitle } from "../services/appearance.js";
+import { getAppearance, MAX_TEXT_LENGTH, MAX_TITLE_LENGTH, setBackground, setBackgroundFocus, setText, setTitle } from "../services/appearance.js";
 import { BroadcastBusyError, type BroadcastSession } from "../services/broadcast.js";
 
 export interface AdminOptions {
@@ -47,6 +47,8 @@ const appearanceTitle = z
   .strict()
   .transform((b) => (b.title && b.title.trim() ? b.title.replace(/\s+/g, " ").trim() : null))
   .refine((t) => t === null || t.length <= MAX_TITLE_LENGTH, `title: at most ${MAX_TITLE_LENGTH} characters`);
+
+const backgroundFocus = z.object({ focusX: z.number().int().min(0).max(100) }).strict();
 
 const blank = (v: string | null | undefined) => (v && v.trim() ? v.trim() : null);
 
@@ -358,6 +360,14 @@ export const adminRoutes: FastifyPluginAsync<AdminOptions> = async (app, opts) =
     } finally {
       await rm(workDir, { recursive: true, force: true });
     }
+  });
+
+  app.put("/appearance/background/focus", async (req, reply) => {
+    const body = backgroundFocus.safeParse(req.body ?? {});
+    if (!body.success) return badRequest(reply, body.error);
+    const result = await setBackgroundFocus(app.db, body.data.focusX);
+    if (!result) return reply.code(409).send({ error: "Upload a background first; the default one has a fixed crop." });
+    return result;
   });
 
   app.delete("/appearance/background", async () => setBackground(app.db, opts.mediaDir, null));

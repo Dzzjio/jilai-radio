@@ -137,6 +137,27 @@ describe("appearance", () => {
     expect(filesOnDisk()).toEqual([]);
   });
 
+  it("phone focus: 50 after upload, saved and published, resets on a new upload; 0..100 only", async () => {
+    const saveFocus = (body: unknown, headers: Record<string, string> = auth()) =>
+      ctx.app.inject({ method: "PUT", url: "/admin/appearance/background/focus", headers, payload: body as object });
+    expect((await saveFocus({ focusX: 20 }, {})).statusCode).toBe(401);
+    expect((await saveFocus({ focusX: 20 })).statusCode).toBe(409); // nothing uploaded yet
+
+    expect((await uploadBg("photo.png")).json().background.focusX).toBe(50);
+    const ok = await saveFocus({ focusX: 12 });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json().background.focusX).toBe(12);
+    expect((await publicAppearance()).background.focusX).toBe(12);
+
+    for (const bad of [{ focusX: -1 }, { focusX: 101 }, { focusX: 12.5 }, { focusX: "12" }, {}]) {
+      expect((await saveFocus(bad)).statusCode).toBe(400);
+    }
+    expect((await saveFocus({ focusX: 0 })).json().background.focusX).toBe(0);
+    expect((await saveFocus({ focusX: 100 })).json().background.focusX).toBe(100);
+
+    expect((await uploadBg("photo.png")).json().background.focusX).toBe(50);
+  });
+
   it("GET /media/<file> serves the file; Range bytes=0-1 → 206", async () => {
     const bg = (await uploadBg("clip.mp4")).json().background;
     const full = await ctx.app.inject({ url: bg.url });
