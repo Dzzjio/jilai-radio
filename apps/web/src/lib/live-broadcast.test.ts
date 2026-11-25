@@ -61,12 +61,18 @@ class FakeWS {
   }
 }
 
+/** Diagnostics messages the page sends alongside the audio. */
+const isDiag = (m: unknown) => typeof m === "string" && JSON.parse(m).type === "diag";
+const diags = (ws: FakeWS) => ws.sent.filter(isDiag).map((m) => JSON.parse(m as string));
+
 class FakeRecorder {
   static last: FakeRecorder;
   static isTypeSupported = (t: string): boolean => t === "audio/webm;codecs=opus";
   state = "inactive";
+  mimeType = "audio/webm; codecs=opus";
   ondataavailable: ((e: { data: { size: number } }) => void) | null = null;
   onstop: (() => void) | null = null;
+  onerror: ((e: { error?: { name: string; message: string } }) => void) | null = null;
   timeslice: number | undefined;
   constructor(
     readonly stream: unknown,
@@ -89,8 +95,8 @@ class FakeRecorder {
   }
 }
 
-function setup(opts: { mimeOk?: boolean; micError?: Error; micGate?: Promise<void> } = {}) {
-  const track = { stop: vi.fn() };
+function setup(opts: { mimeOk?: boolean; micError?: Error; micGate?: Promise<void>; track?: object } = {}) {
+  const track = { stop: vi.fn(), ...opts.track };
   const stream = { getTracks: () => [track] };
   const getUserMedia = vi.fn(async () => {
     await opts.micGate;
@@ -135,7 +141,7 @@ describe("createBroadcaster", () => {
     expect(rec.options).toEqual({ mimeType: "audio/webm;codecs=opus", audioBitsPerSecond: 192000 });
     expect(rec.timeslice).toBe(250);
     rec.chunk(10);
-    expect(ws.sent).toHaveLength(2);
+    expect(ws.sent.filter((m) => !isDiag(m))).toHaveLength(2);
   });
 
   it("stop sends stop, stops recorder and mic tracks", async () => {
@@ -228,3 +234,95 @@ describe("createBroadcaster edge cases", () => {
   });
 });
 
+
+/** A track like a real browser's, for a Fireface on macOS. */
+const fireface = () => {
+  const handlers: Record<string, () => void> = {};
+  return {
+    handlers,
+    track: {
+      kind: "audio",
+      label: "Fireface UCX II",
+      readyState: "live",
+      muted: false,
+      enabled: true,
+      getSettings: () => ({ sampleRate: 48000, channelCount: 2, deviceId: "abc", echoCancellation: false }),
+      getCapabilities: () => ({ channelCount: { min: 1, max: 20 }, sampleRate: { min: 44100, max: 192000 } }),
+      addEventListener: (type: string, cb: () => void) => (handlers[type] = cb),
+    },
+  };
+};
+
+describe("diagnostics (logged by the server, never change the show)", () => {
+  it("on air: reports the device, its settings and the recording format", async () => {
+    const { track } = fireface();
+    const { b } = setup({ track });
+    await b.start({ title: null });
+    const ws = FakeWS.last;
+    ws.open();
+    ws.serverSays({ type: "on-air" });
+    expect(diags(ws)[0]).toEqual({
+      type: "diag",
+      event: "opened",
+      track: { label: "Fireface UCX II", readyState: "live", muted: false, enabled: true },
+      settings: { sampleRate: 48000, channelCount: 2, deviceId: "abc", echoCancellation: false },
+      capabilities: { channelCount: { min: 1, max: 20 }, sampleRate: { min: 44100, max: 192000 } },
+      mimeType: "audio/webm;codecs=opus",
+      recorderMimeType: "audio/webm; codecs=opus",
+      recorderState: "recording",
+    });
+    b.stop();
+  });
+
+  it("reports recorder errors and the mic track ending or going mute", async () => {
+    const { track, handlers } = fireface();
+    const { b, last } = setup({ track });
+    await b.start({ title: null });
+    const ws = FakeWS.last;
+    ws.open();
+    ws.serverSays({ type: "on-air" });
+    FakeRecorder.last.onerror?.({ error: { name: "EncodingError", message: "boom" } });
+    handlers.mute?.();
+    handlers.ended?.();
+    expect(diags(ws).slice(1)).toEqual([
+      { type: "diag", event: "recorder-error", name: "EncodingError", message: "boom" },
+      { type: "diag", event: "track-mute" },
+      { type: "diag", event: "track-ended" },
+    ]);
+    expect(last().phase).toBe("on-air"); // only reported, the show carries on as before
+    b.stop();
+  });
+
+  it("reports how many chunks the recorder made at 1 s and 4 s (before the server's 5 s cutoff)", async () => {
+    vi.useFakeTimers();
+    try {
+      const { b } = setup();
+      await b.start({ title: null });
+      const ws = FakeWS.last;
+      ws.open();
+      ws.serverSays({ type: "on-air" });
+      FakeRecorder.last.chunk(0);
+      FakeRecorder.last.chunk(10);
+      vi.advanceTimersByTime(1000);
+      FakeRecorder.last.chunk(5);
+      vi.advanceTimersByTime(3000);
+      expect(diags(ws).filter((d) => d.event === "stats")).toEqual([
+        { type: "diag", event: "stats", afterMs: 1000, chunks: 2, empty: 1, bytesSent: 10, recorderState: "recording", trackState: null },
+        { type: "diag", event: "stats", afterMs: 4000, chunks: 3, empty: 1, bytesSent: 15, recorderState: "recording", trackState: null },
+      ]);
+      b.stop();
+      ws.serverCloses(1000);
+      vi.advanceTimersByTime(10 * 60_000);
+      expect(diags(ws).filter((d) => d.event === "stats")).toHaveLength(2); // timers cleared when the show ends
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("nothing is sent before the server says on-air", async () => {
+    const { b } = setup();
+    await b.start({ title: null });
+    FakeWS.last.open();
+    expect(diags(FakeWS.last)).toEqual([]);
+  });
+});

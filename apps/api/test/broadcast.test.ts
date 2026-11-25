@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { WebSocket } from "ws";
+import { WebSocket as WebSocketClient, type WebSocket } from "ws";
 import { issueToken } from "../src/auth.js";
 import { ffmpegLiveArgs, LiveBroadcast, redactSecrets } from "../src/services/broadcast.js";
 import { ADMIN_PASSWORD, SECRET, setupTestApp } from "./helpers.js";
@@ -65,13 +65,13 @@ async function app(password?: string, extra: { idleMs?: number; spawnThrows?: bo
 const token = () => issueToken(SESSION_SECRET, ADMIN_PASSWORD).token;
 
 /** Opens /admin/live and records every message and the close code. */
-async function openLive() {
+async function openLive(headers: Record<string, string> = {}) {
   const messages: any[] = [];
   let closeCode: number | null = null;
   let closed!: () => void;
   const closedP = new Promise<void>((r) => (closed = r));
   const waiters: (() => void)[] = [];
-  const ws: WebSocket = await ctx!.app.injectWS("/admin/live", {}, {
+  const ws: WebSocket = await ctx!.app.injectWS("/admin/live", { headers }, {
     onInit: (s) => {
       s.on("message", (raw) => {
         messages.push(JSON.parse(String(raw)));
@@ -267,5 +267,108 @@ describe("public /ws", () => {
     ws.send(Buffer.alloc(2048));
     await done;
     expect(ws.readyState).toBe(ws.CLOSED);
+  });
+});
+
+/** Opens /admin/live over a real local socket (the in-process one never fires the server's "close"). */
+async function openLiveOverTcp(headers: Record<string, string> = {}) {
+  const address = await ctx!.app.listen({ port: 0, host: "127.0.0.1" });
+  const ws = new WebSocketClient(`${address.replace(/^http/, "ws")}/admin/live`, { headers });
+  const messages: any[] = [];
+  ws.on("message", (raw) => messages.push(JSON.parse(String(raw))));
+  await new Promise((r) => ws.once("open", r));
+  return {
+    ws,
+    messages,
+    start: () => ws.send(JSON.stringify({ type: "start", token: token(), title: null })),
+    onAir: () => vi.waitFor(() => expect(messages[0]).toEqual({ type: "on-air" })),
+  };
+}
+
+/** Log lines written with a given message, as [fields, msg] pairs. */
+const logged = (spy: ReturnType<typeof vi.spyOn>, msg: string) =>
+  spy.mock.calls.filter((c: unknown[]) => c[1] === msg).map((c: unknown[]) => c[0] as Record<string, any>);
+
+describe("GET /admin/live diagnostics (log only)", () => {
+  it("logs the page's diag messages with the browser's user agent; they never reach ffmpeg", async () => {
+    const b = await app();
+    const info = vi.spyOn(ctx!.app.log, "info");
+    const live = await openLive({ "user-agent": "TestBrowser/1.0" });
+    live.start();
+    await live.nextMessage();
+    live.ws.send(JSON.stringify({ type: "diag", event: "opened", settings: { sampleRate: 48000, channelCount: 2 } }));
+    live.ws.send(Buffer.from([1, 2]));
+    await tick();
+    expect(logged(info, "browser live: diag")).toEqual([
+      { ua: "TestBrowser/1.0", diag: { type: "diag", event: "opened", settings: { sampleRate: 48000, channelCount: 2 } } },
+    ]);
+    expect(Buffer.concat(b.children[0]!.received)).toEqual(Buffer.from([1, 2]));
+    expect(b.broadcast.busy).toBe(true);
+    expect(live.closeCode).toBeNull();
+  });
+
+  it("a diag message before signing in is not logged and is refused like any other (4401)", async () => {
+    await app();
+    const info = vi.spyOn(ctx!.app.log, "info");
+    const live = await openLive();
+    live.ws.send(JSON.stringify({ type: "diag", event: "opened" }));
+    await live.closed;
+    expect(live.closeCode).toBe(4401);
+    expect(logged(info, "browser live: diag")).toEqual([]);
+    expect(logged(info, "browser live: closed")).toEqual([]);
+  });
+
+  it("caps diag lines per show and ignores oversized ones", async () => {
+    await app();
+    const info = vi.spyOn(ctx!.app.log, "info");
+    const live = await openLive();
+    live.start();
+    await live.nextMessage();
+    live.ws.send(JSON.stringify({ type: "diag", event: "big", pad: "x".repeat(5000) }));
+    for (let i = 0; i < 60; i++) live.ws.send(JSON.stringify({ type: "diag", event: "stats", i }));
+    await tick();
+    const lines = logged(info, "browser live: diag");
+    expect(lines).toHaveLength(50);
+    expect(lines.every((l: Record<string, any>) => l.diag.event === "stats")).toBe(true);
+  });
+
+  it("on close, logs who ended it and how much audio arrived: stop pressed", async () => {
+    await app();
+    const info = vi.spyOn(ctx!.app.log, "info");
+    const live = await openLiveOverTcp({ "user-agent": "TestBrowser/1.0" });
+    live.start();
+    await live.onAir();
+    live.ws.send(Buffer.from([1, 2, 3]));
+    live.ws.send(Buffer.from([4, 5]));
+    await tick();
+    live.ws.send(JSON.stringify({ type: "stop" }));
+    await vi.waitFor(() => expect(logged(info, "browser live: closed")).toEqual([
+      expect.objectContaining({ ua: "TestBrowser/1.0", code: 1000, endedBy: "browser sent stop", chunks: 2, bytes: 5, firstChunkMs: expect.any(Number) }),
+    ]));
+  });
+
+  it("on close, logs who ended it and how much audio arrived: no audio at all", async () => {
+    await app(undefined, { idleMs: 80 });
+    const info = vi.spyOn(ctx!.app.log, "info");
+    const live = await openLiveOverTcp();
+    live.start();
+    await live.onAir();
+    await vi.waitFor(() =>
+      expect(logged(info, "browser live: closed")).toEqual([
+        expect.objectContaining({ code: 4408, endedBy: "no audio from the browser", chunks: 0, bytes: 0, firstChunkMs: null }),
+      ]),
+    );
+  });
+
+  it("on close, logs who ended it: the browser just went away", async () => {
+    await app();
+    const info = vi.spyOn(ctx!.app.log, "info");
+    const live = await openLiveOverTcp();
+    live.start();
+    await live.onAir();
+    live.ws.close(4000);
+    await vi.waitFor(() =>
+      expect(logged(info, "browser live: closed")).toEqual([expect.objectContaining({ code: 4000, endedBy: "browser closed the connection" })]),
+    );
   });
 });
