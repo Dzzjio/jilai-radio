@@ -375,25 +375,10 @@ export const adminRoutes: FastifyPluginAsync<AdminOptions> = async (app, opts) =
   // ---- go live from the browser ----
   const liveStart = z.object({ type: z.literal("start"), token: z.string(), title: z.string().trim().max(200).nullable().optional() });
 
-  /**
-   * Diagnostics, logged only (they never change how a show runs): the page's own "diag" messages
-   * (what the browser opened, recorder errors, chunk counts), and one line per show when it closes.
-   */
-  const MAX_DIAG_BYTES = 4096;
-  const MAX_DIAG_PER_SHOW = 50;
-
-  app.get("/live", { websocket: true }, (socket, req) => {
+  app.get("/live", { websocket: true }, (socket) => {
     let session: BroadcastSession | null = null;
     let stopping = false;
-    const ua = req.headers["user-agent"]?.slice(0, 300) ?? null;
-    let authed = false;
-    let onAirAt: number | null = null;
-    const audio = { chunks: 0, bytes: 0, firstChunkMs: null as number | null };
-    let diagCount = 0;
-    /** Why the show ended, as the close log reports it; the first reason wins. */
-    let endedBy: string | null = null;
     const fail = (code: number, message: string) => {
-      endedBy ??= message;
       if (socket.readyState !== socket.OPEN) return;
       try {
         socket.send(JSON.stringify({ type: "error", message }));
@@ -406,28 +391,8 @@ export const adminRoutes: FastifyPluginAsync<AdminOptions> = async (app, opts) =
     const authTimer = setTimeout(() => fail(4401, "Not signed in."), 5000);
 
     socket.on("message", (data: Buffer, isBinary: boolean) => {
-      if (!isBinary && authed) {
-        let msg: { type?: unknown } | null = null;
-        try {
-          msg = JSON.parse(String(data));
-        } catch {
-          // not JSON: handled below as before
-        }
-        if (msg?.type === "diag") {
-          if (data.length <= MAX_DIAG_BYTES && diagCount < MAX_DIAG_PER_SHOW) {
-            diagCount++;
-            app.log.info({ ua, diag: msg }, "browser live: diag");
-          }
-          return;
-        }
-      }
       if (session) {
-        if (isBinary) {
-          audio.chunks++;
-          audio.bytes += data.length;
-          if (audio.firstChunkMs === null && onAirAt !== null) audio.firstChunkMs = Date.now() - onAirAt;
-          return session.write(data);
-        }
+        if (isBinary) return session.write(data);
         let msg: { type?: unknown } = {};
         try {
           msg = JSON.parse(String(data));
@@ -435,7 +400,6 @@ export const adminRoutes: FastifyPluginAsync<AdminOptions> = async (app, opts) =
           // ignore anything that isn't JSON
         }
         if (msg.type === "stop") {
-          endedBy ??= "browser sent stop";
           stopping = true;
           session.stop();
         }
@@ -452,7 +416,6 @@ export const adminRoutes: FastifyPluginAsync<AdminOptions> = async (app, opts) =
       if (!start || !verifyToken(start.token, opts.sessionSecret, opts.password)) {
         return fail(4401, "Not signed in, or your session expired.");
       }
-      authed = true;
       if (!app.broadcast.enabled) return fail(4503, "Going live isn't set up on the server (LIVE_PASSWORD is empty).");
       try {
         session = app.broadcast.start(start.title || null);
@@ -462,7 +425,6 @@ export const adminRoutes: FastifyPluginAsync<AdminOptions> = async (app, opts) =
         return fail(1011, "The server couldn't start the live stream. Try again in a moment.");
       }
       session.onIdle(() => {
-        endedBy ??= "no audio from the browser";
         stopping = true;
         fail(4408, "No audio from the browser for 5 seconds, so the show was ended. What was recorded is being saved.");
       });
@@ -473,29 +435,14 @@ export const adminRoutes: FastifyPluginAsync<AdminOptions> = async (app, opts) =
           return;
         }
         const reason = stderr.split("\n").filter(Boolean).at(-1)?.slice(0, 300) ?? `ffmpeg exited (${code})`;
-        endedBy ??= `ffmpeg exited (${code})`;
         app.log.warn({ code, stderr }, "browser live: stream to the station failed");
         fail(1011, `The station stopped taking audio: ${reason}`);
       });
-      onAirAt = Date.now();
       socket.send(JSON.stringify({ type: "on-air" }));
     });
 
-    socket.on("close", (code: number, reason: Buffer) => {
+    socket.on("close", () => {
       clearTimeout(authTimer);
-      if (authed) {
-        app.log.info(
-          {
-            ua,
-            code,
-            reason: String(reason) || undefined,
-            endedBy: endedBy ?? "browser closed the connection",
-            onAirMs: onAirAt === null ? null : Date.now() - onAirAt,
-            ...audio,
-          },
-          "browser live: closed",
-        );
-      }
       // Tab closed, laptop asleep or network gone: end the show so the recording is saved.
       stopping = true;
       session?.stop();

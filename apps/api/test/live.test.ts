@@ -47,8 +47,6 @@ afterEach(async () => {
   rmSync(recDir, { recursive: true, force: true });
 });
 
-/** Files left in the recordings folder (the API keeps its live-rewind "hls" folder there). */
-const recordingsLeft = () => readdirSync(recDir).filter((f) => f !== "hls");
 const post = async (url: string, payload: Record<string, unknown>) => ctx.app.inject({ method: "POST", url, headers: internal, payload });
 const repeat = () => ctx.app.inject({ url: "/internal/repeat", headers: internal });
 
@@ -86,7 +84,7 @@ describe("recording → repeat", () => {
     expect(res.track).toMatchObject({ source: "live", onRepeat: true, durationSec: 35 });
     expect(res.track.filename).toMatch(/^live-\d{4}-\d{2}-\d{2}-\d{4}\.mp3$/);
     expect(res.track.title).toMatch(/^Friday Session · \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$/);
-    expect(recordingsLeft()).toEqual([]);
+    expect(readdirSync(recDir)).toEqual([]);
     expect(existsSync(path.join(musicDir, res.track.filename))).toBe(true);
     expect(readdirSync(musicDir).some((f) => f.endsWith(".part"))).toBe(false);
     expect((await repeat()).json()).toEqual({ path: `/music/${res.track.filename}` });
@@ -103,7 +101,7 @@ describe("recording → repeat", () => {
     await post("/internal/live", { live: true });
     await post("/internal/live", { live: false });
     expect((await post("/internal/live-recording", { path: recorded("blip.mp3", "blip.mp3") })).json()).toMatchObject({ discarded: true });
-    expect(recordingsLeft()).toEqual([]);
+    expect(readdirSync(recDir)).toEqual([]);
     expect((await repeat()).statusCode).toBe(204);
     await post("/internal/live", { live: true });
     await post("/internal/live", { live: false });
@@ -181,7 +179,7 @@ describe("pending wait and leftovers (service level)", () => {
     recorded("show.mp3", "old.mp3", 5 * 60_000);
     recorded("show.mp3", "in-progress.mp3", 0);
     expect(await service().recoverLeftovers()).toBe(1);
-    expect(recordingsLeft()).toEqual(["in-progress.mp3"]);
+    expect(readdirSync(recDir)).toEqual(["in-progress.mp3"]);
   });
 });
 

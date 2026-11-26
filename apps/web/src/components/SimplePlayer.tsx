@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
+import { useEffect, useRef, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
 import { type ResolvedBackground } from "@/lib/appearance";
-import { HLS_LIVE_LATENCY } from "@/lib/audio-controller";
 import { config } from "@/lib/config";
 import { formatRemaining, loopPosition, STREAM_DELAY_MS } from "@/lib/loop-progress";
 import { useAudio, useLive } from "@/lib/radio-client";
@@ -72,30 +71,23 @@ interface Shown {
   p: number;
   remaining: number;
   total: number;
-  /** Live only: seconds behind the newest audio. */
-  behind?: number;
 }
 
 const SEEK_STEP = 10;
-/** Further behind live than this (beyond the player's normal few seconds) counts as rewound. */
-const REWOUND_AFTER = 8;
-
-/** Seconds a live listener is behind, not counting the player's normal latency. */
-const rewoundBy = (shown: Shown | null) => Math.max(0, (shown?.behind ?? 0) - HLS_LIVE_LATENCY);
 
 /**
  * The player bar: play/pause and how far into the track we are, counting down.
  * Above it: the admin's title, if they typed one, and a LIVE badge during a live show.
- * Between shows the recording plays as a file; during a show, the live HLS playlist. Either way
- * the bar follows the actual playback, holds still whenever nothing plays, and a click or drag
- * jumps. Live, the LIVE button brings a rewound listener back to the newest audio.
+ * Between shows the recording plays as a file (see AudioController.useLoop): the bar follows the
+ * actual playback and holds still whenever nothing plays; a click or drag jumps. Live: no seeking,
+ * no countdown.
  */
 export function NowPlayingBar({ title }: { title: string | null }) {
   const { status, controller } = useAudio();
   const { nowPlaying: np } = useLive();
   const live = np?.isLive ?? false;
   const loopUrl = np && !live && np.loopUrl ? `${config.apiUrl}${np.loopUrl}` : null;
-  const hlsUrl = live ? `${config.apiUrl}/hls/show.m3u8` : null;
+  const seekable = loopUrl !== null && !!np?.durationSec;
   useMediaSession(title);
 
   const npRef = useRef(np);
@@ -103,22 +95,18 @@ export function NowPlayingBar({ title }: { title: string | null }) {
   const fillRef = useRef<HTMLSpanElement>(null);
   const timeRef = useRef<HTMLSpanElement>(null);
   const seekRef = useRef<HTMLDivElement>(null);
-  /** While stopped (and nothing loaded yet), the bar holds still at this spot. */
+  /** While stopped (and no file loaded yet), the bar holds still at this spot. */
   const frozenRef = useRef<Shown | null>(null);
   /** Fraction under the pointer while dragging. */
   const dragRef = useRef<number | null>(null);
   const statusRef = useRef(status);
   statusRef.current = status;
-  /** Live: can the listener seek yet (playlist loaded), and are they behind live? */
-  const [liveUi, setLiveUi] = useState({ seek: false, rewound: false });
-  const liveUiRef = useRef(liveUi);
 
-  // Tell the player what to play. Between shows, play starts at the spot the bar shows
+  // Between shows: hand the loop file to the player. Play starts at the spot the bar shows
   // (where the radio was when the page opened, or where it was stopped).
   useEffect(() => {
-    controller?.useSources({
-      hls: hlsUrl,
-      loop: loopUrl
+    controller?.useLoop(
+      loopUrl
         ? {
             url: loopUrl,
             startAt: () => {
@@ -129,16 +117,15 @@ export function NowPlayingBar({ title }: { title: string | null }) {
             },
           }
         : null,
-    });
-  }, [controller, loopUrl, hlsUrl]);
+    );
+  }, [controller, loopUrl]);
 
-  /** Where the radio (or what's loaded) is right now, ignoring any freeze or drag. */
+  /** Where the radio (or the loaded file) is right now, ignoring any freeze or drag. */
   const radioNow = (): Shown | null => {
     const n = npRef.current;
-    if (!n) return null;
+    if (!n || n.isLive) return null;
     const pos = controller?.position();
-    if (pos) return { p: pos.current / pos.duration, remaining: pos.duration - pos.current, total: pos.duration, behind: pos.behind };
-    if (n.isLive) return null;
+    if (pos) return { p: pos.current / pos.duration, remaining: pos.duration - pos.current, total: pos.duration };
     if (n.loopUrl && n.durationSec) {
       const at = loopPosition(n.startedAt, n.airSec ?? n.durationSec, Date.now()) ?? 0;
       return { p: at / n.durationSec, remaining: n.durationSec - at, total: n.durationSec };
@@ -156,7 +143,7 @@ export function NowPlayingBar({ title }: { title: string | null }) {
     const stopped = st !== "playing" && st !== "loading";
     let shown: Shown | null;
     if (controller?.position()) {
-      // a loaded file or live playlist moves only while it plays
+      // a loaded file moves only while it plays
       frozenRef.current = null;
       shown = radioNow();
     } else if (stopped) {
@@ -168,7 +155,7 @@ export function NowPlayingBar({ title }: { title: string | null }) {
     }
     if (shown && dragRef.current !== null) {
       const p = dragRef.current;
-      shown = { p, remaining: shown.total * (1 - p), total: shown.total, behind: shown.total * (1 - p) };
+      shown = { p, remaining: shown.total * (1 - p), total: shown.total };
     }
     return shown;
   };
@@ -181,45 +168,28 @@ export function NowPlayingBar({ title }: { title: string | null }) {
   // Paint every frame straight into the DOM (no re-render); browsers skip frames in hidden tabs.
   useEffect(() => {
     let raf = 0;
-    let lastText = "";
-    let lastNow = -1;
+    let lastSecond = -1;
     const paint = () => {
-      const isLive = !!npRef.current?.isLive;
-      const shown = compute();
+      const shown = live ? null : compute();
       const fill = fillRef.current;
-      if (fill) fill.style.transform = `scaleX(${isLive && !shown ? 1 : (shown?.p ?? 0)})`;
-
-      const back = rewoundBy(shown);
-      const rewound = isLive && !!shown && back > REWOUND_AFTER;
-      const text = !shown ? "" : isLive ? (rewound ? `−${formatRemaining(back)}` : "") : formatRemaining(shown.remaining);
-      if (text !== lastText && timeRef.current) timeRef.current.textContent = text;
-      lastText = text;
-
-      const el = seekRef.current;
-      const now = shown ? Math.floor(shown.total - shown.remaining) : -1;
-      if (el && shown && now !== lastNow) {
-        el.setAttribute("aria-valuemax", String(Math.round(shown.total)));
-        el.setAttribute("aria-valuenow", String(now));
-        el.setAttribute(
-          "aria-valuetext",
-          isLive ? (rewound ? `${formatRemaining(back)} behind live` : "Live") : `${formatRemaining(shown.remaining)} left`,
-        );
-      }
-      lastNow = now;
-
-      const ui = { seek: isLive && !!shown, rewound };
-      if (ui.seek !== liveUiRef.current.seek || ui.rewound !== liveUiRef.current.rewound) {
-        liveUiRef.current = ui;
-        setLiveUi(ui);
+      if (fill) fill.style.transform = `scaleX(${live ? 1 : (shown?.p ?? 0)})`;
+      const second = shown ? Math.ceil(shown.remaining - 1e-6) : -1;
+      if (second !== lastSecond) {
+        lastSecond = second;
+        if (timeRef.current) timeRef.current.textContent = shown ? formatRemaining(shown.remaining) : "";
+        const el = seekRef.current;
+        if (el && shown) {
+          const now = Math.floor(shown.total - shown.remaining);
+          el.setAttribute("aria-valuenow", String(now));
+          el.setAttribute("aria-valuetext", `${formatRemaining(shown.remaining)} left`);
+        }
       }
       raf = requestAnimationFrame(paint);
     };
     paint();
     return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- compute reads refs
-  }, [controller]);
-
-  const canSeek = live ? liveUi.seek : loopUrl !== null && !!np?.durationSec;
+  }, [live, controller]);
 
   const total = () => compute()?.total ?? np?.durationSec ?? 0;
   const fractionAt = (clientX: number) => {
@@ -227,7 +197,7 @@ export function NowPlayingBar({ title }: { title: string | null }) {
     return r && r.width > 0 ? Math.min(1, Math.max(0, (clientX - r.left) / r.width)) : 0;
   };
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
-    if (!canSeek || e.button !== 0) return;
+    if (!seekable || e.button !== 0) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     dragRef.current = fractionAt(e.clientX);
   };
@@ -255,11 +225,6 @@ export function NowPlayingBar({ title }: { title: string | null }) {
       Home: 0,
       End: shown.total - 1,
     };
-    if (live && e.key === "End") {
-      e.preventDefault();
-      controller?.goLive();
-      return;
-    }
     const target = to[e.key];
     if (target === undefined) return;
     e.preventDefault();
@@ -267,23 +232,16 @@ export function NowPlayingBar({ title }: { title: string | null }) {
   };
 
   const active = status === "playing" || status === "loading";
-  const rewound = live && liveUi.rewound;
 
   return (
     <section className={s.bar} aria-label="Now playing">
       {title || live ? (
         <p className={s.np}>
           {live ? (
-            <button
-              type="button"
-              className={rewound ? `${s.live} ${s.liveBehind}` : s.live}
-              onClick={() => controller?.goLive()}
-              aria-label={rewound ? "Back to live" : active ? "Live" : "Play live"}
-              title={rewound ? "Back to live" : undefined}
-            >
+            <span className={s.live}>
               <span className={s.liveDot} aria-hidden="true" />
               LIVE
-            </button>
+            </span>
           ) : (
             <span className={s.label}>Now Playing:</span>
           )}
@@ -311,13 +269,13 @@ export function NowPlayingBar({ title }: { title: string | null }) {
             </svg>
           )}
         </button>
-        {canSeek ? (
+        {seekable ? (
           <div
             ref={seekRef}
             className={`${s.seek} ${s.seekable}`}
             role="slider"
             tabIndex={0}
-            aria-label={live ? "Position in the live show" : "Position in the recording"}
+            aria-label="Position in the recording"
             aria-valuemin={0}
             aria-valuemax={Math.round(np?.durationSec ?? 0)}
             onPointerDown={onPointerDown}
@@ -337,7 +295,7 @@ export function NowPlayingBar({ title }: { title: string | null }) {
             </span>
           </div>
         )}
-        <span ref={timeRef} className={s.time} aria-hidden="true" />
+        {live ? null : <span ref={timeRef} className={s.time} aria-hidden="true" />}
       </div>
       {/* only the error is shown; "connecting" is for screen readers */}
       <p className={status === "error" ? s.error : "sr-only"} role="status" aria-live="polite">

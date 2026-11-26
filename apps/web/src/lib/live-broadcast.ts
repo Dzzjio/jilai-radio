@@ -30,12 +30,6 @@ export function formatOnAir(ms: number): string {
 export const MIN_SHOW_MS = 30_000;
 /** ~10 s of audio queued in the browser means the connection has stopped draining. */
 const MAX_QUEUED_BYTES = 256 * 1024;
-/**
- * Diagnostics: when the recorder's chunk counts are reported. 1 s and 4 s come before the server's
- * 5 s "no audio" cutoff, so even a show that never sends a chunk says why. After that, every 5 min.
- */
-const STATS_AT_MS = [1000, 4000] as const;
-const STATS_EVERY_MS = 5 * 60_000;
 
 /**
  * What the admin should be told once a show is over:
@@ -53,26 +47,13 @@ export interface BroadcastState {
   message: string;
 }
 
-interface TrackLike {
-  stop(): void;
-  // Read only for diagnostics; all optional so a browser missing one still goes live.
-  label?: string;
-  readyState?: string;
-  muted?: boolean;
-  enabled?: boolean;
-  getSettings?(): object;
-  getCapabilities?(): object;
-  addEventListener?(type: string, cb: () => void): void;
-}
 interface StreamLike {
-  getTracks(): TrackLike[];
+  getTracks(): { stop(): void }[];
 }
 interface RecorderLike {
   state: string;
-  mimeType?: string;
   ondataavailable: ((e: { data: { size: number } }) => void) | null;
   onstop: (() => void) | null;
-  onerror?: ((e: { error?: { name?: string; message?: string } }) => void) | null;
   start(timeslice?: number): void;
   stop(): void;
 }
@@ -107,8 +88,6 @@ export function createBroadcaster(deps: BroadcasterDeps) {
   let serverError = "";
   /** stop() pressed while the browser was still asking for the mic. */
   let cancelled = false;
-  let statsTimers: ReturnType<typeof setTimeout>[] = [];
-  let statsInterval: ReturnType<typeof setInterval> | undefined;
 
   const set = (patch: Partial<BroadcastState>) => {
     state = { ...state, ...patch };
@@ -119,15 +98,7 @@ export function createBroadcaster(deps: BroadcasterDeps) {
     for (const t of stream?.getTracks() ?? []) t.stop();
   };
 
-  const stopStats = () => {
-    for (const t of statsTimers) clearTimeout(t);
-    statsTimers = [];
-    clearInterval(statsInterval);
-    statsInterval = undefined;
-  };
-
   const cleanup = () => {
-    stopStats();
     if (recorder && recorder.state !== "inactive") {
       recorder.onstop = null;
       recorder.stop();
@@ -190,10 +161,7 @@ export function createBroadcaster(deps: BroadcasterDeps) {
       if (msg.type === "error") serverError = msg.message ?? "";
       if (msg.type === "on-air" && stream && !recorder) {
         const rec = new deps.MediaRecorder(stream, { mimeType, audioBitsPerSecond: BITRATE });
-        const stats = { chunks: 0, empty: 0, bytesSent: 0 };
         rec.ondataavailable = (ev) => {
-          stats.chunks++;
-          if (ev.data.size === 0) stats.empty++;
           if (ev.data.size === 0 || ws.readyState !== ws.OPEN) return;
           if (ws.bufferedAmount > MAX_QUEUED_BYTES) {
             // Nothing is getting through (Wi-Fi gone): give up rather than stay "on air" in silence.
@@ -202,11 +170,9 @@ export function createBroadcaster(deps: BroadcasterDeps) {
             return;
           }
           ws.send(ev.data);
-          stats.bytesSent += ev.data.size;
         };
         rec.start(CHUNK_MS);
         recorder = rec;
-        reportDiagnostics(ws, stream, rec, mimeType, stats);
         set({ phase: "on-air", startedAt: now(), message: "" });
       }
     };
@@ -223,45 +189,6 @@ export function createBroadcaster(deps: BroadcasterDeps) {
           : "Couldn't reach the station. Check your connection and try again.");
       set({ phase: "error", message });
     };
-  }
-
-  /** Sends what the browser opened and how the recorder is doing, for the server log. Never affects the show. */
-  function reportDiagnostics(
-    ws: SocketLike,
-    mic: StreamLike,
-    rec: RecorderLike,
-    mimeType: string,
-    stats: { chunks: number; empty: number; bytesSent: number },
-  ) {
-    const diag = (event: string, data: Record<string, unknown> = {}) => {
-      try {
-        if (ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: "diag", event, ...data }));
-      } catch {
-        // diagnostics must never break the show
-      }
-    };
-    try {
-      const track = mic.getTracks()[0];
-      diag("opened", {
-        track: { label: track?.label, readyState: track?.readyState, muted: track?.muted, enabled: track?.enabled },
-        settings: track?.getSettings?.() ?? null,
-        capabilities: track?.getCapabilities?.() ?? null,
-        mimeType,
-        recorderMimeType: rec.mimeType ?? null,
-        recorderState: rec.state,
-      });
-      // eslint-disable-next-line unicorn/prefer-add-event-listener -- exactly one handler per recorder we create
-      rec.onerror = (e) => diag("recorder-error", { name: e?.error?.name ?? null, message: e?.error?.message ?? null });
-      for (const type of ["ended", "mute", "unmute"]) track?.addEventListener?.(type, () => diag(`track-${type}`));
-      const report = (afterMs: number) =>
-        diag("stats", { afterMs, ...stats, recorderState: rec.state, trackState: track?.readyState ?? null });
-      stopStats();
-      statsTimers = STATS_AT_MS.map((ms) => setTimeout(() => report(ms), ms));
-      let periods = 0;
-      statsInterval = setInterval(() => report(++periods * STATS_EVERY_MS), STATS_EVERY_MS);
-    } catch {
-      // diagnostics must never break the show
-    }
   }
 
   function stop() {

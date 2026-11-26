@@ -95,12 +95,9 @@ waiting_for_recording = ref(false)
 # --- Live input ---------------------------------------------------------------
 
 is_live = ref(false)
-# Start time of the current show: names its HLS chunks, so a new show never overwrites the last one's.
-show_id = ref(int_of_float(time()))
 
 def on_live_connect(_) =
   is_live := true
-  show_id := int_of_float(time())
   log.important(label="live", "DJ connected")
   # Drop any queued repeat (the previous show): after this show, its own recording comes next.
   repeat_requests.set_queue([])
@@ -149,23 +146,6 @@ recorder = output.file(
     api_post("/internal/live-recording", json.stringify({path = f}))
     waiting_for_recording := false
   end)
-)
-
-# Live rewind: while a show is on, the live input is also cut into 4-second HLS chunks
-# (recordings/hls/aac.m3u8). The playlist keeps up to 3 hours and carries on across shows
-# (each new show starts after an EXT-X-DISCONTINUITY); the API serves only the current show
-# at /hls/show.m3u8, so the website can rewind anywhere in it and jump back to live.
-output.file.hls(
-  id="hls",
-  playlist="live.m3u8",
-  segment_duration=4.,
-  segment_name=fun (m) -> "#{m.stream_name}_#{show_id()}_#{m.position}.#{m.extname}",
-  segments=2700,
-  segments_overhead=5,
-  fallible=true,
-  "#{recordings_dir}/hls",
-  [("aac", %ffmpeg(format="mpegts", %audio(codec="aac", b="192k", samplerate=44100, channels=2)))],
-  live
 )
 
 # --- Library ---------------------------------------------------------------------

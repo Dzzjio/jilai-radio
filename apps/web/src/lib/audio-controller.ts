@@ -26,7 +26,6 @@ export type AudioLike = Pick<
   | "duration"
   | "loop"
   | "readyState"
-  | "seekable"
 >;
 
 /** The looped recording as a file: played instead of the stream between live shows, so it can seek. */
@@ -35,20 +34,6 @@ export interface LoopSource {
   /** Where the radio is inside the file right now, in seconds: playback starts there. */
   startAt: () => number;
 }
-
-/** A live HLS playlist attached to the element (hls.js). */
-export interface HlsHandle {
-  destroy(): void;
-  /** The point hls.js considers "live" (a few chunks behind the newest), if known. */
-  liveSyncPosition(): number | null;
-}
-
-/**
- * Attaches a live HLS playlist to the element. Resolves null when this browser can't play HLS
- * through Media Source (the controller then plays the plain stream: live, no rewind).
- * `onFatal` reports an error the player can't recover from by itself.
- */
-export type AttachHls = (el: AudioLike, url: string, onFatal: () => void) => Promise<HlsHandle | null>;
 
 /**
  * Optional Web Audio routing (element → analyser → gain → speakers).
@@ -71,23 +56,11 @@ export interface AudioControllerDeps {
   now?: () => number;
   /** Called once, inside the first play() (a user gesture), to build the Web Audio graph. */
   connectGraph?: (el: AudioLike) => AudioGraph;
-  /** Live rewind. Without it, live shows play the plain stream. */
-  attachHls?: AttachHls;
-}
-
-/** Where playback is. Live (HLS): measured from the oldest chunk kept, plus how far behind live. */
-export interface PlayPosition {
-  current: number;
-  duration: number;
-  /** Live only: seconds behind the newest audio. */
-  behind?: number;
 }
 
 const VOLUME_KEY = "radio-jil:volume";
 const MUTED_KEY = "radio-jil:muted";
 const MAX_RETRIES = 8;
-/** hls.js's default distance from the newest chunk when "at live" (3 chunks × 4 s). */
-export const HLS_LIVE_LATENCY = 12;
 
 export function clampVolume(v: number) {
   return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1;
@@ -103,15 +76,14 @@ function readStored(storage: StorageLike | null | undefined) {
   }
 }
 
-type Mode = "stream" | "file" | "hls";
-
 /**
- * Controls the single <audio> element. Three sources, chosen by useSources():
- * - Live HLS (during a show): pauses in place, rewinds anywhere in the show, goLive() jumps back.
- * - Loop file (between shows): starts where the radio is, loops, pauses in place and can seek.
- * - Plain stream (otherwise, or when HLS isn't possible): play joins the live edge
- *   (cache-busted URL); pause drops the connection, so resuming never plays stale audio.
- * Nothing is downloaded until the first play. Failures retry with backoff.
+ * Controls the single <audio> element: the live stream, or the looped recording as a file.
+ * - Nothing is downloaded until the first play (good for page performance).
+ * - Stream: play always joins the live edge (cache-busted URL); pause drops the
+ *   connection, so resuming never plays stale buffered audio.
+ * - Loop file (see useLoop): starts where the radio is, loops, pauses in place and can seek.
+ * - If the stream errors or ends while the listener wants audio, it retries
+ *   with backoff (the server may be restarting).
  */
 export function createAudioController(deps: AudioControllerDeps) {
   const createAudio = deps.createAudio ?? (() => new Audio());
@@ -127,19 +99,10 @@ export function createAudioController(deps: AudioControllerDeps) {
   let wantPlaying = false;
   let retries = 0;
   let retryTimer: unknown = null;
-
-  // What should play.
-  let hlsUrl: string | null = null;
   let loop: LoopSource | null = null;
-  /** This live playlist can't be played here: use the plain stream until the playlist changes. */
-  let hlsBlocked: string | null = null;
-
-  // What the element holds right now (null = nothing loaded).
-  let loaded: Mode | null = null;
-  let hls: HlsHandle | null = null;
-  /** Bumped whenever the element is reset, so a late hls.js attach is thrown away. */
-  let generation = 0;
-  /** A position to jump to once the source's length is known. */
+  /** The element holds the loop file (not the stream). */
+  let fileLoaded = false;
+  /** A position to jump to once the file's length is known. */
   let pendingSeek: number | null = null;
 
   const set = (patch: Partial<AudioState>) => {
@@ -156,12 +119,6 @@ export function createAudioController(deps: AudioControllerDeps) {
     } catch {
       // Private mode / blocked storage: volume just isn't remembered.
     }
-  };
-
-  const wantedMode = (): Mode => {
-    if (hlsUrl && deps.attachHls && hlsBlocked !== hlsUrl) return "hls";
-    if (loop) return "file";
-    return "stream";
   };
 
   /** Pushes the current volume/mute to whichever output is in use. */
@@ -210,48 +167,44 @@ export function createAudioController(deps: AudioControllerDeps) {
       if (wantPlaying) set({ status: "loading" });
     });
     el.addEventListener("loadedmetadata", applyPendingSeek);
-    el.addEventListener("canplay", applyPendingSeek);
     el.addEventListener("error", onFailure);
     el.addEventListener("ended", onFailure);
     return el;
   }
 
-  /** The seekable window: the whole file, or the live chunks kept. */
-  function seekWindow(): { start: number; end: number } | null {
-    if (!audio) return null;
-    if (loaded === "file") {
-      const d = audio.duration;
-      return Number.isFinite(d) && d > 0 ? { start: 0, end: d } : null;
-    }
-    if (loaded === "hls" && hls) {
-      const r = audio.seekable;
-      if (!r || r.length === 0) return null;
-      const start = r.start(0);
-      const end = r.end(r.length - 1);
-      return end > start ? { start, end } : null;
-    }
-    return null;
-  }
-
   function applyPendingSeek() {
-    if (!audio || pendingSeek === null) return;
-    const w = seekWindow();
-    if (!w) return;
-    const len = w.end - w.start;
-    const target = loaded === "file" ? ((pendingSeek % len) + len) % len : Math.min(Math.max(0, pendingSeek), len);
-    audio.currentTime = w.start + target;
+    if (!audio || !fileLoaded || pendingSeek === null) return;
+    const d = audio.duration;
+    if (!Number.isFinite(d) || d <= 0) return;
+    audio.currentTime = ((pendingSeek % d) + d) % d;
     pendingSeek = null;
   }
 
   function onFailure() {
     if (!wantPlaying) return;
-    // a broken file is reloaded from where it was
-    if (loaded === "file" && audio) pendingSeek ??= audio.currentTime || null;
-    resetElement();
+    // a broken file load is retried from where it was
+    if (fileLoaded && audio) {
+      pendingSeek ??= audio.currentTime || null;
+      fileLoaded = false;
+    }
     scheduleRetry();
   }
 
-  function playElement(el: AudioLike) {
+  function startStream() {
+    const el = ensureAudio();
+    if (loop) {
+      if (!fileLoaded) {
+        el.loop = true;
+        el.src = loop.url;
+        fileLoaded = true;
+        pendingSeek ??= loop.startAt();
+      }
+    } else {
+      el.loop = false;
+      fileLoaded = false;
+      const sep = deps.streamUrl.includes("?") ? "&" : "?";
+      el.src = `${deps.streamUrl}${sep}t=${now()}`;
+    }
     void graph?.resume();
     el.play().catch((err: unknown) => {
       if (!wantPlaying) return;
@@ -261,67 +214,17 @@ export function createAudioController(deps: AudioControllerDeps) {
         set({ status: "stopped" });
         return;
       }
-      // AbortError happens when pause() or a source switch interrupts play(); ignore it.
+      // AbortError happens when pause() interrupts play(); ignore it.
       if (err instanceof Error && err.name === "AbortError") return;
-      onFailure();
+      scheduleRetry();
     });
-  }
-
-  function startStream() {
-    const el = ensureAudio();
-    const mode = wantedMode();
-    if (loaded === mode && (mode !== "hls" || hls)) {
-      playElement(el); // paused file or live playlist: carry on
-      return;
-    }
-    resetElement();
-    if (mode === "file" && loop) {
-      el.loop = true;
-      el.src = loop.url;
-      loaded = "file";
-      pendingSeek ??= loop.startAt();
-      playElement(el);
-    } else if (mode === "hls" && hlsUrl && deps.attachHls) {
-      el.loop = false;
-      loaded = "hls";
-      const gen = generation;
-      const url = hlsUrl;
-      deps
-        .attachHls(el, url, () => {
-          if (gen === generation) onFailure();
-        })
-        .then(
-          (handle) => {
-            if (gen !== generation) return handle?.destroy();
-            if (!handle) {
-              // no Media Source here: the plain stream (live, no rewind)
-              hlsBlocked = url;
-              loaded = null;
-              if (wantPlaying) startStream();
-              return;
-            }
-            hls = handle;
-            applyPendingSeek();
-            if (wantPlaying) playElement(el);
-          },
-          () => {
-            if (gen === generation) onFailure();
-          },
-        );
-    } else {
-      el.loop = false;
-      const sep = deps.streamUrl.includes("?") ? "&" : "?";
-      el.src = `${deps.streamUrl}${sep}t=${now()}`;
-      loaded = "stream";
-      playElement(el);
-    }
   }
 
   function scheduleRetry() {
     if (retryTimer !== null) return;
     if (retries >= MAX_RETRIES) {
       wantPlaying = false;
-      resetElement();
+      releaseStream();
       set({ status: "error" });
       return;
     }
@@ -332,16 +235,10 @@ export function createAudioController(deps: AudioControllerDeps) {
     }, reconnectDelay(retries++));
   }
 
-  /** Stops and empties the element (drops the connection, detaches hls.js). */
-  function resetElement() {
-    generation++;
-    const h = hls;
-    hls = null;
-    const was = loaded;
-    loaded = null;
+  function releaseStream() {
+    fileLoaded = false;
+    pendingSeek = null;
     if (!audio) return;
-    if (h) h.destroy();
-    if (was === null && !h) return;
     audio.pause();
     audio.removeAttribute("src");
     audio.load();
@@ -364,12 +261,9 @@ export function createAudioController(deps: AudioControllerDeps) {
       wantPlaying = false;
       if (retryTimer !== null) clearTimer(retryTimer);
       retryTimer = null;
-      // the loop file and the live playlist pause in place (play resumes there); the stream is dropped
-      if ((loaded === "file" || (loaded === "hls" && hls)) && audio) audio.pause();
-      else {
-        resetElement();
-        pendingSeek = null;
-      }
+      // the loop file pauses in place (play resumes there); the stream is dropped
+      if (fileLoaded && audio) audio.pause();
+      else releaseStream();
       set({ status: "stopped" });
     },
     toggle() {
@@ -377,52 +271,32 @@ export function createAudioController(deps: AudioControllerDeps) {
       else controller.play();
     },
     /**
-     * What should play: the live playlist during a show (hls), else the recording on repeat as a
-     * file (loop), else the plain stream. Switching while playing carries on with the new source.
+     * Between live shows: the recording on repeat, played as a file. null = the live stream.
+     * Switching while playing carries on with the new source.
      */
-    useSources(next: { hls: string | null; loop: LoopSource | null }) {
-      const before = wantedMode();
-      const beforeUrl = before === "hls" ? hlsUrl : before === "file" ? loop?.url : null;
-      hlsUrl = next.hls;
-      loop = next.loop;
-      const after = wantedMode();
-      const afterUrl = after === "hls" ? hlsUrl : after === "file" ? loop?.url : null;
-      if (before === after && beforeUrl === afterUrl) return;
-      if (hlsBlocked && hlsBlocked !== hlsUrl) hlsBlocked = null;
-      pendingSeek = null;
-      resetElement();
+    useLoop(next: LoopSource | null) {
+      if (next?.url === loop?.url) {
+        loop = next;
+        return;
+      }
+      loop = next;
+      if (!fileLoaded && !(wantPlaying && audio)) return;
+      releaseStream();
       if (wantPlaying) startStream();
     },
-    /** Between shows only: shorthand for useSources with no live playlist. */
-    useLoop(next: LoopSource | null) {
-      controller.useSources({ hls: null, loop: next });
-    },
-    /** Loop file or live playlist: jump to `sec` from the start (and start playing if stopped). */
+    /** Loop file only: jump to `sec` (and start playing if stopped). */
     seek(sec: number) {
-      const mode = wantedMode();
-      if ((mode !== "file" && mode !== "hls") || !Number.isFinite(sec)) return;
+      if (!loop || !Number.isFinite(sec)) return;
       pendingSeek = Math.max(0, sec);
       applyPendingSeek();
       if (!wantPlaying) controller.play();
     },
-    /** Live playlist: back to the newest audio (and play if stopped). Plain stream: just play. */
-    goLive() {
-      if (audio && loaded === "hls" && hls) {
-        const w = seekWindow();
-        const target = hls.liveSyncPosition() ?? (w ? Math.max(w.start, w.end - HLS_LIVE_LATENCY) : null);
-        if (target !== null) audio.currentTime = target;
-        pendingSeek = null;
-      }
-      if (!wantPlaying) controller.play();
-    },
-    /** Loop file or live playlist, once loaded: where playback is. */
-    position(): PlayPosition | null {
-      const w = seekWindow();
-      if (!audio || !w) return null;
-      const len = w.end - w.start;
-      if (loaded === "file") return { current: pendingSeek ?? audio.currentTime, duration: len };
-      const current = pendingSeek ?? Math.min(Math.max(0, audio.currentTime - w.start), len);
-      return { current, duration: len, behind: len - current };
+    /** Loop file only, once loaded: where playback is and how long the file is. */
+    position(): { current: number; duration: number } | null {
+      if (!audio || !fileLoaded) return null;
+      const d = audio.duration;
+      if (!Number.isFinite(d) || d <= 0) return null;
+      return { current: pendingSeek ?? audio.currentTime, duration: d };
     },
     setVolume(v: number) {
       const volume = clampVolume(v);
